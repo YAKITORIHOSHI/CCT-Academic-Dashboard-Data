@@ -14,7 +14,6 @@ import {
   ShieldCheck,
   X,
   ClipboardCheck,
-  Sliders,
   ChevronDown,
   User,
   Mail,
@@ -24,8 +23,7 @@ import {
   Check,
   Landmark,
   Camera,
-  LoaderCircle,
-  Upload
+  LoaderCircle
 } from 'lucide-react';
 
 const AccountPanel = ({ onClose }) => {
@@ -129,7 +127,7 @@ const AccountPanel = ({ onClose }) => {
         <button
           type="button"
           onClick={onClose}
-          className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 cursor-pointer"
+          className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 cursor-pointer"
           aria-label="Close account panel"
         >
           <X className="h-4 w-4" />
@@ -180,7 +178,7 @@ const AccountPanel = ({ onClose }) => {
             <button
               type="submit"
               disabled={isSaving}
-              className="primary-action inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-900 via-blue-800 to-sky-600 hover:from-blue-800 hover:to-sky-500 px-5 text-xs font-bold text-sky-100 transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60 cursor-pointer shadow-md"
+              className="primary-action inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-900 via-blue-800 to-sky-600 hover:from-blue-800 hover:to-sky-500 px-5 text-xs font-bold text-sky-100 transition hover:brightness-110 active:scale-[0.99] disabled:opacity-60 cursor-pointer shadow-md"
             >
               <Save className="h-4 w-4" />
               {isSaving ? 'Saving…' : 'Save Profile Changes'}
@@ -288,7 +286,7 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileMenuOpen, setIsMobile
         <button
           type="button"
           onClick={() => setIsMobileMenuOpen(false)}
-          className="control-lift icon-control grid h-9 w-9 place-items-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          className="control-lift icon-control grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
           aria-label="Close navigation"
         >
           <X className="h-4 w-4" />

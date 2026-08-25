@@ -993,8 +993,9 @@ body {
 
 .modal-backdrop {
   overscroll-behavior: contain;
-  padding-top: max(0px, env(safe-area-inset-top));
-  padding-bottom: max(0px, env(safe-area-inset-bottom));
+  /* Floor of 0.75rem matches the p-3 backdrop utility so env()=0 devices keep padding */
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
 .mobile-drawer-backdrop {
@@ -1034,6 +1035,14 @@ body {
   padding-right: 0 !important;
   padding-bottom: env(safe-area-inset-bottom) !important;
   padding-left: 0 !important;
+}
+
+/* Full-screen pages (login) respect notch/home-indicator insets on top of p-4 */
+.login-screen {
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
 }
 
 .modal-surface pre {

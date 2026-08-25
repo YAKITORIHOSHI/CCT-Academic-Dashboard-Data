@@ -2,6 +2,7 @@
   "name": "cct-academic-system",
   "private": true,
   "version": "0.0.0",
+  "description": "Natsuki College of Imus Academic Performance Monitoring and Reporting System — React/Vite dashboard with Firebase realtime data and Supabase avatar storage.",
   "type": "module",
   "scripts": {
     "dev": "vite",

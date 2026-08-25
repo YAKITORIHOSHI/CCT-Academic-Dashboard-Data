@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   ArrowLeft,
-  Check,
   CheckCircle2,
   Database,
   Globe,
@@ -16,6 +15,27 @@ import {
   Settings,
   Type
 } from 'lucide-react';
+
+/**
+ * Build a per-user localStorage key so preferences stay isolated between
+ * accounts sharing the same browser (mirrors the App.jsx convention).
+ */
+const userPrefKey = (userId, key) => userId ? `cct_u_${userId}_${key}` : `cct_${key}`;
+
+const readPref = (userId, key, fallback) => {
+  try {
+    const value = localStorage.getItem(userPrefKey(userId, key));
+    return value !== null ? value : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writePref = (userId, key, value) => {
+  try {
+    localStorage.setItem(userPrefKey(userId, key), value);
+  } catch { /* non-critical */ }
+};
 
 const StatusDot = ({ status }) => {
   const colors = {
@@ -94,26 +114,8 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
   const [connectionType, setConnectionType] = useState('');
   const [connectionLatency, setConnectionLatency] = useState(null);
 
-  // Per-user preference key helper
-  const userId = currentUser?.id || '';
-  const prefKey = (key) => userId ? `cct_u_${userId}_${key}` : `cct_${key}`;
-
-  const readPref = (key, fallback) => {
-    try {
-      const value = localStorage.getItem(prefKey(key));
-      return value !== null ? value : fallback;
-    } catch {
-      return fallback;
-    }
-  };
-
-  const writePref = (key, value) => {
-    try {
-      localStorage.setItem(prefKey(key), value);
-    } catch { /* non-critical */ }
-  };
-
   // Preferences — initialized with defaults, loaded per-user below
+  const userId = currentUser?.id || '';
   const [hardwareAcceleration, setHardwareAcceleration] = useState(true);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [fontFamily, setFontFamily] = useState('system');
@@ -121,9 +123,9 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
   // Load per-user preferences when user changes
   useEffect(() => {
     if (!userId) return;
-    setHardwareAcceleration(readPref('hw_accel', 'true') !== 'false');
-    setReduceMotion(readPref('reduce_motion', 'false') === 'true');
-    setFontFamily(readPref('font', 'system'));
+    setHardwareAcceleration(readPref(userId, 'hw_accel', 'true') !== 'false');
+    setReduceMotion(readPref(userId, 'reduce_motion', 'false') === 'true');
+    setFontFamily(readPref(userId, 'font', 'system'));
   }, [userId]);
 
   // Monitor online/offline status
@@ -156,24 +158,21 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
   // Hardware acceleration toggle
   const handleHardwareAcceleration = useCallback((enabled) => {
     setHardwareAcceleration(enabled);
-    writePref('hw_accel', String(enabled));
+    writePref(userId, 'hw_accel', String(enabled));
     document.documentElement.classList.toggle('no-hw-accel', !enabled);
   }, [userId]);
 
   // Reduce motion toggle
   const handleReduceMotion = useCallback((enabled) => {
     setReduceMotion(enabled);
-    writePref('reduce_motion', String(enabled));
+    writePref(userId, 'reduce_motion', String(enabled));
     document.documentElement.classList.toggle('reduce-motion', enabled);
   }, [userId]);
 
   // Font family change handler
   const handleFontFamilyChange = useCallback((selectedFont) => {
     setFontFamily(selectedFont);
-    writePref('font', selectedFont);
-    try {
-      localStorage.setItem('cct_font', selectedFont);
-    } catch (e) {}
+    writePref(userId, 'font', selectedFont);
     document.documentElement.classList.remove('font-montserrat', 'font-oswald');
     if (selectedFont === 'montserrat') document.documentElement.classList.add('font-montserrat');
     else if (selectedFont === 'oswald') document.documentElement.classList.add('font-oswald');

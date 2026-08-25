@@ -30,6 +30,9 @@ import {
 export const AuthContext = createContext(null);
 const DATA_VERSION = '7.0-natsuki-college-of-imus';
 
+// Automatic sign-out after 5 minutes without user interaction (300,000 ms).
+const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+
 const readStoredCollection = (key, fallback) => {
   try {
     const nciKey = key.replace(/^cct_/, 'nci_');
@@ -64,6 +67,15 @@ const updateKeepSignedInPreference = (keepSignedIn) => {
 
 
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key);
+
+// Avatar URLs originate from Supabase Storage and are persisted in RTDB and
+// localStorage before being bound to <img src>. Only well-formed https URLs
+// are accepted so a tampered database or cache cannot inject other schemes.
+const AVATAR_URL_PATTERN = /^https:\/\/[^\s"'<>\\]+$/i;
+const sanitizeAvatarUrl = (url) => {
+  const candidate = typeof url === 'string' ? url.trim() : '';
+  return AVATAR_URL_PATTERN.test(candidate) ? candidate : '';
+};
 
 const collectionToArray = (value) => {
   if (Array.isArray(value)) return value.filter(Boolean);
@@ -165,9 +177,6 @@ export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [inactivityNotice, setInactivityNotice] = useState('');
-
-  // 5 Minutes = 300,000 ms
-  const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
@@ -314,7 +323,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const resolveUserAvatarFromStorage = async (acc) => {
-    if (!acc || !acc.id || acc.avatarUrl) return acc?.avatarUrl || '';
+    if (!acc || !acc.id || acc.avatarUrl) return sanitizeAvatarUrl(acc?.avatarUrl);
     try {
       const { supabase, isSupabaseConfigured, BUCKET_NAME } = await import('../supabase/client');
       if (!isSupabaseConfigured || !supabase) return '';
@@ -326,7 +335,7 @@ export const AuthProvider = ({ children }) => {
         const { data: urlData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(matchedFile.name);
         if (urlData?.publicUrl) {
           const resolvedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
-          try { localStorage.setItem(`nci_user_avatar_${acc.id}`, resolvedUrl); } catch (e) {}
+          try { localStorage.setItem(`nci_user_avatar_${acc.id}`, resolvedUrl); } catch { /* non-critical cache */ }
           if (isFirebaseInitialized && rtdb) {
             rtdbSet(rtdbRef(rtdb, `accounts/${acc.id}/avatarUrl`), resolvedUrl).catch(() => {});
           }
@@ -380,7 +389,7 @@ export const AuthProvider = ({ children }) => {
 
         list = list.map((acc) => ({
           ...acc,
-          avatarUrl: acc.avatarUrl || (acc.id ? localStorage.getItem(`nci_user_avatar_${acc.id}`) || '' : '')
+          avatarUrl: sanitizeAvatarUrl(acc.avatarUrl || (acc.id ? localStorage.getItem(`nci_user_avatar_${acc.id}`) || '' : ''))
         }));
 
         accountsRef.current = list;
@@ -480,7 +489,7 @@ export const AuthProvider = ({ children }) => {
 
         list = list.map((acc) => ({
           ...acc,
-          avatarUrl: acc.avatarUrl || (acc.id ? localStorage.getItem(`nci_user_avatar_${acc.id}`) || '' : '')
+          avatarUrl: sanitizeAvatarUrl(acc.avatarUrl || (acc.id ? localStorage.getItem(`nci_user_avatar_${acc.id}`) || '' : ''))
         }));
 
         accountsRef.current = list;
@@ -494,7 +503,7 @@ export const AuthProvider = ({ children }) => {
         }
 
         if (matched.id && matched.avatarUrl) {
-          try { localStorage.setItem(`nci_user_avatar_${matched.id}`, matched.avatarUrl); } catch (e) {}
+          try { localStorage.setItem(`nci_user_avatar_${matched.id}`, matched.avatarUrl); } catch { /* non-critical cache */ }
         } else if (matched.id && !matched.avatarUrl) {
           const resolvedAvatar = await resolveUserAvatarFromStorage(matched);
           if (resolvedAvatar) {
@@ -503,7 +512,7 @@ export const AuthProvider = ({ children }) => {
           }
         }
 
-        const cachedAvatar = matched.id ? localStorage.getItem(`nci_user_avatar_${matched.id}`) : null;
+        const cachedAvatar = matched.id ? sanitizeAvatarUrl(localStorage.getItem(`nci_user_avatar_${matched.id}`)) : null;
         const finalAvatar = matched.avatarUrl || cachedAvatar || '';
         setCurrentUser({ ...matched, avatarUrl: finalAvatar });
 
@@ -658,7 +667,7 @@ export const AuthProvider = ({ children }) => {
 
       list = list.map((acc) => ({
         ...acc,
-        avatarUrl: acc.avatarUrl || (acc.id ? localStorage.getItem(`nci_user_avatar_${acc.id}`) || '' : '')
+        avatarUrl: sanitizeAvatarUrl(acc.avatarUrl || (acc.id ? localStorage.getItem(`nci_user_avatar_${acc.id}`) || '' : ''))
       }));
 
       accountsRef.current = list;
@@ -789,11 +798,11 @@ export const AuthProvider = ({ children }) => {
           name: String(updatedData.name ?? existing.name).trim(),
           role: updatedData.role ?? existing.role,
           department: String(updatedData.department ?? existing.department).trim(),
-          avatarUrl: updatedData.avatarUrl !== undefined ? updatedData.avatarUrl : (existing.avatarUrl || '')
+          avatarUrl: updatedData.avatarUrl !== undefined ? sanitizeAvatarUrl(updatedData.avatarUrl) : (existing.avatarUrl || '')
         }
       : {
           name: String(updatedData.name ?? existing.name).trim(),
-          avatarUrl: updatedData.avatarUrl !== undefined ? updatedData.avatarUrl : (existing.avatarUrl || '')
+          avatarUrl: updatedData.avatarUrl !== undefined ? sanitizeAvatarUrl(updatedData.avatarUrl) : (existing.avatarUrl || '')
         };
 
     if (!safeData.name) return { success: false, message: 'Display name cannot be empty.' };
@@ -811,7 +820,7 @@ export const AuthProvider = ({ children }) => {
     if (isSelfUpdate) {
       setCurrentUser(updatedAccount);
       if (updatedAccount.avatarUrl) {
-        try { localStorage.setItem(`nci_user_avatar_${id}`, updatedAccount.avatarUrl); } catch (e) {}
+        try { localStorage.setItem(`nci_user_avatar_${id}`, updatedAccount.avatarUrl); } catch { /* non-critical cache */ }
       }
     }
     addAuditLog('Update Account', `Updated profile for ${updatedAccount.email}`);
@@ -917,7 +926,7 @@ export const AuthProvider = ({ children }) => {
       const fileExt = rawExt.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
       const filePath = `${currentUser.id}_${Date.now()}.${fileExt}`;
 
-      const { data, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
         .upload(filePath, compressedFile, { upsert: true, cacheControl: '0', contentType: compressedFile.type || 'image/jpeg' });
 
@@ -937,7 +946,7 @@ export const AuthProvider = ({ children }) => {
 
       // Cache avatar URL locally by user ID only
       if (currentUser.id) {
-        try { localStorage.setItem(`nci_user_avatar_${currentUser.id}`, avatarUrl); } catch (e) {}
+        try { localStorage.setItem(`nci_user_avatar_${currentUser.id}`, avatarUrl); } catch { /* non-critical cache */ }
       }
 
       const result = await updateAccount(currentUser.id, { avatarUrl });

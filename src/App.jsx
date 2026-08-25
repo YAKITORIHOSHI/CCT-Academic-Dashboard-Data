@@ -153,8 +153,6 @@ const AppContent = () => {
         setActiveTab={changeTab}
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
-        isDarkMode={isDarkMode}
-        setIsDarkMode={setIsDarkMode}
       />
 
       <div className="mx-auto flex w-full max-w-[1920px] items-start gap-4 px-3 py-3 sm:gap-5 sm:px-5 sm:py-5 lg:px-7 xl:gap-6 xl:px-10">

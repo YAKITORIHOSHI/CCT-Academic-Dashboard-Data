@@ -13,7 +13,6 @@ import {
   Landmark,
   Layers,
   Plus,
-  ShieldCheck,
   Sliders,
   Trash2
 } from 'lucide-react';

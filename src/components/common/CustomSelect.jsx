@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 
@@ -42,7 +42,7 @@ export const CustomSelect = ({
   const selectedOption = selectedIndex >= 0 ? normalizedOptions[selectedIndex] : null;
   const displayLabel = selectedOption?.label || placeholder;
 
-  const updatePosition = () => {
+  const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
     if (!trigger || typeof window === 'undefined') return;
 
@@ -75,7 +75,7 @@ export const CustomSelect = ({
       bottom: openAbove ? viewportHeight - rect.top + 6 : 'auto',
       zIndex: 140
     });
-  };
+  }, [normalizedOptions.length, menuMinWidth, menuMaxWidth]);
 
   useLayoutEffect(() => {
     if (!isOpen) return undefined;
@@ -87,7 +87,7 @@ export const CustomSelect = ({
       window.removeEventListener('resize', handleViewportChange);
       window.removeEventListener('scroll', handleViewportChange, true);
     };
-  }, [isOpen, normalizedOptions.length, menuMinWidth, menuMaxWidth]);
+  }, [isOpen, updatePosition]);
 
   useEffect(() => {
     if (!isOpen) return undefined;

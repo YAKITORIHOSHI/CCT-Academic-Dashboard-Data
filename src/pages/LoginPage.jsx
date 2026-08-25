@@ -44,7 +44,7 @@ export const LoginPage = () => {
       if (!res?.success) {
         setErrorMsg(res?.message || 'Invalid institutional email or password.');
       }
-    } catch (err) {
+    } catch {
       setErrorMsg('Authentication request failed. Please check your credentials.');
     } finally {
       setLoading(false);
@@ -52,7 +52,7 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen min-h-[100dvh] w-full bg-slate-950/45 text-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
+    <div className="login-screen min-h-screen min-h-[100dvh] w-full bg-slate-950/45 text-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
 
       {/* NCI Deep Navy & Cyan Ambient Glow Orbs */}
       <div className="absolute -top-32 -left-32 w-[34rem] h-[34rem] bg-blue-900/40 rounded-full blur-[120px] pointer-events-none" />
@@ -137,12 +137,12 @@ export const LoginPage = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onBlur={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-10 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:border-sky-400 focus:outline-none transition-colors"
+                className="w-full pl-10 pr-13 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 focus:border-sky-400 focus:outline-none transition-colors"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-sky-300 transition-colors z-20"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 text-slate-400 hover:text-sky-300 transition-colors z-20"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
                 title={showPassword ? 'Hide password' : 'Show password'}
               >
@@ -151,13 +151,15 @@ export const LoginPage = () => {
             </div>
           </div>
 
-          <div className="pt-0.5 pb-0.5">
+          <div className="py-1">
             <button
               type="button"
               onClick={() => setKeepSignedIn((prev) => !prev)}
-              className="flex items-center gap-2.5 cursor-pointer group text-left focus:outline-none"
+              role="checkbox"
+              aria-checked={keepSignedIn}
+              className="flex min-h-11 w-full items-center gap-2.5 cursor-pointer group text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 rounded-lg -mx-1 px-1"
             >
-              <div className={`w-4 h-4 rounded-md border transition-all flex items-center justify-center shrink-0 ${
+              <div className={`w-[18px] h-[18px] rounded-md border transition-all flex items-center justify-center shrink-0 ${
                 keepSignedIn
                   ? 'bg-gradient-to-br from-sky-400 to-blue-600 border-sky-300 text-slate-950 shadow-sm shadow-sky-500/40'
                   : 'bg-slate-950/80 border-slate-700/80 group-hover:border-sky-400/60'

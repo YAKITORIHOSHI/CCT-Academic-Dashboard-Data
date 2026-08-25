@@ -7,9 +7,7 @@ import {
   ChevronDown,
   LogOut,
   Menu,
-  Moon,
   Sliders,
-  Sun,
   X
 } from 'lucide-react';
 
@@ -28,7 +26,7 @@ const roleBadgeClass = (role) => {
   }
 };
 
-export const Navbar = ({ setActiveTab, isMobileMenuOpen, setIsMobileMenuOpen, isDarkMode, setIsDarkMode }) => {
+export const Navbar = ({ setActiveTab, isMobileMenuOpen, setIsMobileMenuOpen }) => {
   const { currentUser, logout } = useAuth();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const triggerRef = useRef(null);
@@ -44,14 +42,30 @@ export const Navbar = ({ setActiveTab, isMobileMenuOpen, setIsMobileMenuOpen, is
     const left = window.innerWidth < 640
       ? gutter
       : Math.min(Math.max(gutter, rect.right - width), window.innerWidth - width - gutter);
-    setMenuStyle({
-      position: 'fixed',
-      left,
-      top: rect.bottom + 8,
-      width,
-      maxHeight: Math.max(180, window.innerHeight - rect.bottom - 20),
-      zIndex: 130
-    });
+
+    // Prefer opening below the trigger, but flip above it when the viewport is too
+    // short (e.g. landscape phones) so the menu never renders past the screen edge.
+    const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - 16);
+    const spaceAbove = Math.max(0, rect.top - 16);
+    if (spaceBelow < 220 && spaceAbove > spaceBelow) {
+      setMenuStyle({
+        position: 'fixed',
+        left,
+        bottom: window.innerHeight - rect.top + 8,
+        width,
+        maxHeight: spaceAbove,
+        zIndex: 130
+      });
+    } else {
+      setMenuStyle({
+        position: 'fixed',
+        left,
+        top: rect.bottom + 8,
+        width,
+        maxHeight: Math.max(180, spaceBelow),
+        zIndex: 130
+      });
+    }
   };
 
   useLayoutEffect(() => {
