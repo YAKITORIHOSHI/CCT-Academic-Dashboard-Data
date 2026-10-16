@@ -43,6 +43,8 @@ Hosting and database rules for `academicdashboarddata` were deployed on 2026-10-
 
 On 2026-10-17, login access was reconciled for all nine existing Auth accounts: profile UIDs and access mappings now agree, the user confirmed the incomplete Arts and Science Dean profile, and assigned school names match the catalog. Verified legacy record owners were updated without changing grades or approvals. The login form now retains inputs and displays access-verification errors. Hosting version `7e998297a5842dfc` contains this fix. Auth passwords and database rules were preserved; Functions remain undeployed. Validation: 39 unit tests, 23 security tests, and four concurrency tests pass.
 
+The subsequent navigation layout fix is live in Hosting version `3981beb25f8170a8`. Desktop navigation fits below the header and scrolls independently; the mobile drawer fills the visible screen. Long forms and dropdowns scroll within their rounded panels. Build/lint and all 39 unit tests passed for this change; browser checks covered desktop, narrow phones, short landscape screens, and nested dialogs. This Hosting-only update preserved Firebase configuration, environments, access rules, accounts, data, and prepared Functions.
+
 The interface uses the City College of Tagaytay crest, a cool neutral neumorphic canvas (`#edf0ef`), a charcoal dark theme (`#23282b`), and burgundy (`#7f2038`) actions. The split sign-in page has a continuously panning campus photograph and a corner crest, with no pause control. Extra image width guarantees sideways travel on desktop and mobile. As requested, this photograph keeps moving even with reduced motion enabled; other interface animations retain reduced-motion support. On mobile, the campus becomes a compact banner above the form. Firebase Authentication and Realtime Database use `academicdashboarddata`. Accounts use initials, with no profile photo uploads.
 
 The design draws on [Creative Tim’s Soft UI Dashboard](https://demos.creative-tim.com/soft-ui-dashboard-react/), [CSS-Tricks’ neumorphism guidance](https://css-tricks.com/neumorphism-and-css/), and [NN/G’s research on visible interaction cues](https://www.nngroup.com/articles/flat-ui-less-attention-cause-uncertainty/). Raised panels and recessed fields provide depth; text contrast, explicit labels, focus outlines, and visible selected states preserve usability.
@@ -66,11 +68,11 @@ Production access uses the UID, role, and department rules in database.rules.jso
 - Single-column record and catalog forms with persistent labels and explicit optional fields
 - Title Case headings and labels, comfortable button padding, and consistent 12px controls / 20px panels
 - Distinct label, placeholder, and entered-value styling; long dropdown choices wrap instead of truncating
-- Full-height desktop navigation with a compact profile, visible active state, and short-viewport adaptations
+- Desktop navigation stays within the visible viewport below the header; its menu and footer scroll independently of the page, including on short screens
 - Press feedback, brief page/modal transitions, animated chart fills, and reduced-motion support
-- Mobile navigation drawer with safe-area and touch support
+- Full-height mobile navigation drawer with a fixed profile, scrollable links/footer, safe-area support, and automatic dismissal at the desktop breakpoint
 - Program filters and program labels in records, reports, CSV export, and the subject combobox
-- Portal-based responsive dropdowns and modal-safe menus
+- Portal-based responsive dropdowns and modal-safe menus, with scrollbars contained inside rounded panels and long forms remaining reachable
 - Responsive record table/cards and mobile bottom-sheet forms
 - Restored school logo for the browser tab/favicon
 - Database synchronization and pending-write status indicators

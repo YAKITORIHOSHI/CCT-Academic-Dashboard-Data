@@ -97,7 +97,7 @@ const AccountPanel = ({ onClose }) => {
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+      <div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-5">
         {/* Profile form */}
         <section className="space-y-3">
           <div className="flex items-center gap-2">
@@ -215,6 +215,14 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileMenuOpen, setIsMobile
   const { currentUser, permissions, records, dataSync } = useAuth();
   const [isAccountOpen, setIsAccountOpen] = useState(false);
 
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const closeDesktopDrawer = () => { if (desktop.matches) setIsMobileMenuOpen?.(false); };
+    closeDesktopDrawer();
+    desktop.addEventListener('change', closeDesktopDrawer);
+    return () => desktop.removeEventListener('change', closeDesktopDrawer);
+  }, [setIsMobileMenuOpen]);
+
   const pendingForUser = records.filter((record) => {
     if (record.status !== 'Pending Dean Approval') return false;
     if (permissions.isVPAA) return true;
@@ -250,7 +258,7 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileMenuOpen, setIsMobile
 
   const sidebarContent = (
     <div className="sidebar-content flex h-full min-h-0 flex-col p-3">
-      <div className="mb-3 flex items-center justify-between lg:hidden">
+      <div className="mb-3 flex shrink-0 items-center justify-between lg:hidden">
         <div className="text-xs font-semibold tracking-normal text-slate-500 dark:text-slate-400">Navigation</div>
         <button
           type="button"
@@ -266,7 +274,7 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileMenuOpen, setIsMobile
       <button
         type="button"
         onClick={() => setIsAccountOpen(true)}
-        className="sidebar-profile group w-full rounded-2xl border border-gold-900/30 bg-gradient-to-br from-crimson-50 via-gold-50 to-white p-3 text-left transition hover:border-gold-400/40 hover:shadow-md dark:border-gold-900/60 dark:from-crimson-950/70 dark:via-gold-950/10 dark:to-slate-900 dark:hover:border-gold-400/50"
+        className="sidebar-profile group w-full shrink-0 rounded-2xl border border-gold-900/30 bg-gradient-to-br from-crimson-50 via-gold-50 to-white p-3 text-left transition hover:border-gold-400/40 hover:shadow-md dark:border-gold-900/60 dark:from-crimson-950/70 dark:via-gold-950/10 dark:to-slate-900 dark:hover:border-gold-400/50"
         aria-label="Open account management"
       >
         <div className="flex min-w-0 items-center gap-3">
@@ -288,8 +296,9 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileMenuOpen, setIsMobile
         </div>
       </button>
 
+      <div className="sidebar-scroll" tabIndex={0} role="region" aria-label="Scrollable navigation">
       <p className="nav-group-label">Academic Workspace</p>
-      <nav className="sidebar-nav mt-3 min-h-0 space-y-1" aria-label="System modules">
+      <nav className="sidebar-nav" aria-label="System modules">
         {navItems.filter((item) => item.visible).map((item) => {
           const Icon = item.icon;
           const active = activeTab === item.id;
@@ -332,7 +341,7 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileMenuOpen, setIsMobile
         </button>
       )}
 
-      <div className="sidebar-footer mt-auto border-t border-slate-200 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-500">
+      <div className="sidebar-footer border-t border-slate-200 pt-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-500">
         <div className="flex items-center justify-between gap-2">
           <span className="truncate">CCT Academic System</span>
           <span className={`h-2 w-2 shrink-0 rounded-full ${dataSync?.status === 'error' ? 'bg-rose-500' : dataSync?.status === 'offline' ? 'bg-amber-500' : dataSync?.status === 'syncing' ? 'bg-gold-500 animate-pulse' : 'bg-emerald-500'}`} aria-hidden="true" />
@@ -340,15 +349,7 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileMenuOpen, setIsMobile
         <div className="mt-1 truncate">{syncLabel}</div>
       </div>
 
-      {/* Account management modal */}
-      <Modal
-        open={isAccountOpen}
-        onClose={() => setIsAccountOpen(false)}
-        ariaLabel="Account management"
-        className="w-full sm:w-auto"
-      >
-        <AccountPanel onClose={() => setIsAccountOpen(false)} />
-      </Modal>
+      </div>
     </div>
   );
 
@@ -363,10 +364,21 @@ export const Sidebar = ({ activeTab, setActiveTab, isMobileMenuOpen, setIsMobile
         onClose={() => setIsMobileMenuOpen(false)}
         ariaLabel="Primary navigation"
         backdropClassName="mobile-drawer-backdrop lg:hidden"
-        className="mobile-drawer h-full w-[min(88vw,22rem)] overflow-y-auto bg-white dark:bg-slate-900"
+        className="mobile-drawer h-full w-[min(88vw,22rem)] bg-white dark:bg-slate-900"
+        scrollable={false}
         zIndex={90}
       >
         {sidebarContent}
+      </Modal>
+
+      <Modal
+        open={isAccountOpen}
+        onClose={() => setIsAccountOpen(false)}
+        ariaLabel="Account management"
+        className="w-full sm:w-auto"
+        scrollable={false}
+      >
+        <AccountPanel onClose={() => setIsAccountOpen(false)} />
       </Modal>
     </>
   );

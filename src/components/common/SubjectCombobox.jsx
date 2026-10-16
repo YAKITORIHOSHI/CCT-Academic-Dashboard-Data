@@ -188,8 +188,9 @@ export const SubjectCombobox = ({
           role="listbox"
           aria-label="Available subjects"
           style={menuStyle}
-          className="dropdown-surface overflow-y-auto overscroll-contain rounded-2xl border border-gold-950/30 bg-white/98 p-1.5 shadow-2xl backdrop-blur-xl dark:border-gold-900/60 dark:bg-slate-900/98"
+          className="dropdown-surface dropdown-scroll-frame rounded-2xl border border-gold-950/30 bg-white/98 p-1.5 shadow-2xl backdrop-blur-xl dark:border-gold-900/60 dark:bg-slate-900/98"
         >
+          <div className="dropdown-scroll-body">
           {filteredSubjects.length === 0 ? (
             <div className="px-3 py-4 text-center text-sm text-slate-500 dark:text-slate-400">No matching subject in the selected academic unit.</div>
           ) : filteredSubjects.map((subject, index) => {
@@ -223,6 +224,7 @@ export const SubjectCombobox = ({
               </button>
             );
           })}
+          </div>
         </div>,
         document.body
       )}

@@ -628,6 +628,7 @@ export const RecordsPage = () => {
         align="bottom"
         backdropClassName="mobile-sheet-backdrop"
         ariaLabel={editingRecord ? 'Edit academic performance record' : 'New academic performance record'}
+        scrollable={false}
         className="flex max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom))] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 sm:max-h-[94dvh] sm:rounded-2xl"
       >
             <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
@@ -825,10 +826,10 @@ export const RecordsPage = () => {
         onClose={() => setReviewState(null)}
         ariaLabel="Review academic record"
         zIndex={110}
-        className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:p-6"
+        className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
       >
         {reviewState && (
-          <div>
+          <div className="p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className={`flex items-center gap-2 text-xs font-semibold tracking-normal ${reviewState.decision === 'approve' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>

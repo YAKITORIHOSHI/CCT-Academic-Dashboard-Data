@@ -1,5 +1,9 @@
 /* CCT Academic Workspace: cool neutral surfaces, pressed controls, CCT burgundy. */
 :root {
+  --app-header-height: calc(4.5rem + 1px);
+  --workspace-block-gap: 0.75rem;
+  --scrollbar-thumb: #8b9793;
+  --scrollbar-thumb-hover: #667570;
   color-scheme: light;
   --neu-canvas: #edf0ef;
   --neu-surface: #edf0ef;
@@ -30,6 +34,8 @@
 }
 
 html.dark {
+  --scrollbar-thumb: #71837d;
+  --scrollbar-thumb-hover: #96a69f;
   color-scheme: dark;
   --neu-canvas: #23282b;
   --neu-surface: #23282b;
@@ -118,7 +124,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .dropdown-surface { padding: .5rem; }
 .modal-surface pre { background: var(--neu-canvas); }
 
-.sidebar-content { padding: 1rem; overflow-y: auto; scrollbar-width: thin; }
+.sidebar-content { height: 100%; min-height: 0; padding: 0.875rem; overflow: hidden; }
+.sidebar-scroll { flex: 1 1 0; min-height: 0; margin-top: 0.5rem; padding: 0.25rem; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.sidebar-scroll:focus-visible { outline: 2px solid var(--neu-accent); outline-offset: 1px; border-radius: 12px; }
 .sidebar-profile {
   background: var(--neu-surface) !important;
   background-image: none !important;
@@ -133,8 +141,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   box-shadow: none !important;
 }
 .sidebar-profile-detail { color: var(--neu-muted) !important; border-color: var(--neu-line) !important; }
-.sidebar-nav { margin-top: 1.5rem; }
-.nav-item { margin-block: .4rem; min-height: 48px; border-radius: 12px; border: 0 !important; }
+.sidebar-nav { display: grid; gap: 0.25rem; margin: 0; }
+.nav-item { margin: 0; min-height: 48px; padding: 0.5rem 0.625rem; border-radius: 12px; border: 0 !important; }
 .nav-item > span:first-child {
   background: transparent !important;
   border-color: transparent !important;
@@ -151,9 +159,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .nav-item:not(.nav-item-active) { color: var(--neu-muted) !important; }
 .nav-item:hover:not(.nav-item-active) { background: var(--neu-surface) !important; box-shadow: var(--neu-small) !important; transform: none; }
 .nav-item:hover > span { transform: none !important; }
-.sidebar-queue { margin-top: 1.25rem; background: var(--neu-surface) !important; color: var(--neu-muted) !important; border-color: var(--neu-line) !important; }
-.sidebar-footer { color: var(--neu-muted) !important; border-color: var(--neu-line) !important; padding-top: 1rem; }
-.nav-group-label { margin: 1rem .75rem .5rem; color: var(--neu-muted); font-size: .75rem; font-weight: 600; }
+.sidebar-queue { width: 100%; min-height: 44px; margin-top: 0.875rem; background: var(--neu-surface) !important; color: var(--neu-muted) !important; border-color: var(--neu-line) !important; }
+.sidebar-footer { margin-top: 1rem; color: var(--neu-muted) !important; border-color: var(--neu-line) !important; padding-top: 0.875rem; padding-bottom: 0.25rem; }
+.nav-group-label { margin: 0.5rem .625rem .75rem; color: var(--neu-muted); font-size: .75rem; font-weight: 600; }
 
 .form-control, .login-input {
   background: var(--neu-canvas) !important;
@@ -334,13 +342,11 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
   .primary-action:active:not(:disabled), .hero-action:active:not(:disabled) { box-shadow: inset 3px 3px 7px #591127, inset -3px -3px 7px #a42b51 !important; }
 }
 
-/* Full-height workspace with space between the navigation and content. */
-.workspace-layout { min-height: calc(100dvh - 4.5rem); }
-.sidebar-shell { position: relative; align-self: stretch; height: auto; min-height: calc(100dvh - 7rem); }
-.sidebar-content { min-height: 100%; padding: 1.25rem; }
-.sidebar-nav { margin-top: .5rem; }
-.nav-item { min-height: 54px; margin-block: .65rem; padding: .7rem .65rem; }
-.sidebar-footer { margin-top: auto; padding-top: 1.25rem; padding-bottom: .25rem; }
+/* Keep navigation bounded by the viewport while long pages scroll independently. */
+.workspace-layout { min-height: calc(100dvh - var(--app-header-height)); padding-block: var(--workspace-block-gap); }
+.sidebar-shell { position: sticky; top: calc(var(--app-header-height) + var(--workspace-block-gap)); align-self: flex-start; height: calc(100dvh - var(--app-header-height) - 2 * var(--workspace-block-gap)); min-height: 0; overflow: hidden; }
+.modal-surface.mobile-drawer { display: flex; height: 100%; max-height: 100%; min-height: 0; overflow: hidden; border-radius: 0 20px 20px 0; }
+.mobile-drawer > .sidebar-content { flex: 1; width: 100%; }
 .theme-selector { width: 128px; flex-shrink: 0; }
 .theme-selector button.control-lift { height: 44px; min-height: 44px; padding: .5rem .75rem; gap: .5rem; font-size: .8125rem; white-space: nowrap; }
 .appearance-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem .875rem; }

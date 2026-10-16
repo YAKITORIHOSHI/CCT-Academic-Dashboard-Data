@@ -84,9 +84,10 @@ export const ConfirmDialog = ({
       onClose={busy ? undefined : onCancel}
       closeOnBackdrop={!busy}
       ariaLabelledBy={titleId}
-      className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:p-6"
+      className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
       zIndex={150}
     >
+      <div className="p-5 sm:p-6">
       <div className="flex items-start gap-3">
         <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${isDanger ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'}`}>
           <AlertTriangle className="h-5 w-5" />
@@ -113,6 +114,7 @@ export const ConfirmDialog = ({
         >
           {busy ? 'Working…' : confirmLabel}
         </button>
+      </div>
       </div>
     </Modal>
   );

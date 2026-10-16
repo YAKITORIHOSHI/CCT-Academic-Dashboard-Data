@@ -1,5 +1,17 @@
 # Complete CCT source and changed-file list
 
+## Navigation and modal scrolling fix — 17 October 2026
+
+- `src/components/layout/Sidebar.jsx`, `src/index.css`, and `src/neumorphism.css`: constrain the desktop sidebar to the visible viewport below the header, retain its position during page scrolling, and give links, approval status and footer an independent scroll area. The mobile drawer fills the viewport, keeps its profile above the scroll area, and closes when the desktop breakpoint is reached. Conflicting height, overflow, hiding and spacing rules were removed.
+- `src/components/common/Modal.jsx`: contain scrolling within rounded modal edges, fit short screens, ignore hidden focus targets and handle keyboard events only in the topmost dialog.
+- `src/components/common/CustomSelect.jsx` and `src/components/common/SubjectCombobox.jsx`: contain option scrollbars inside rounded dropdown panels while preserving portal positioning and long labels.
+- `src/components/common/Feedback.jsx`, `src/pages/AcademicWorkspacePage.jsx`, `src/pages/AccountsPage.jsx`, `src/pages/BackupPage.jsx`, and `src/pages/RecordsPage.jsx`: preserve dialog padding, scrolling and fixed action sections with the shared scroll frame. Mobile account management now mounts once instead of twice.
+- `README.md` and this manifest: document the current layout, verification and publication.
+
+Validation: `npm run check` passes with zero lint warnings, and `npm test` passes all 39 tests. Actual browser checks covered 1920×912, 1280×600, 1024×560, 390×844, 320×568 and 844×390 layouts; navigation scrolling reaches the final link and footer without scrolling the page or overlapping content. Main-page scrolling keeps the desktop sidebar within the viewport. Resizing closes an open drawer, nested account dialogs close correctly, and long student/record forms and school dropdowns remain reachable. No records were submitted during these checks. The prior security and concurrency emulator suites were not rerun for this presentation-only change.
+
+Hosting-only version `3981beb25f8170a8` is live; published HTML matches the final local build. Firebase identity, environment files, Auth accounts, data, rules and prepared Functions were preserved. The refreshed `CCT_Academic_Management_System_Layout_Fix_2026-10-17.zip` includes complete current source, release notes, encrypted environment backup and per-file SHA-256 hashes. Plaintext environments, keys, private audits/screenshots, logs, dependencies and build output are excluded.
+
 ## All-account login repair — 17 October 2026
 
 - `src/context/AuthContext.jsx`: keep explicit sign-in forms mounted during directory verification, display missing-access failures, prevent duplicate attempts, and clean up only the failed attempt's session.

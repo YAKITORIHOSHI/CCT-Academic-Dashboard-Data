@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 let scrollLockDepth = 0;
 let previousBodyOverflow = '';
 let previousBodyPaddingRight = '';
+const modalStack = [];
 
 const lockBodyScroll = () => {
   if (scrollLockDepth === 0) {
@@ -26,7 +27,7 @@ const unlockBodyScroll = () => {
 
 const getFocusableElements = (container) => Array.from(container.querySelectorAll(
   'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-)).filter((element) => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true');
+)).filter((element) => element.getClientRects().length > 0 && !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true');
 
 export const Modal = ({
   open,
@@ -38,6 +39,7 @@ export const Modal = ({
   ariaLabel,
   ariaLabelledBy,
   closeOnBackdrop = true,
+  scrollable = true,
   zIndex = 100
 }) => {
   const modalRef = useRef(null);
@@ -50,6 +52,8 @@ export const Modal = ({
     if (!open) return undefined;
 
     const previouslyFocused = document.activeElement;
+    const modal = modalRef.current;
+    modalStack.push(modal);
     lockBodyScroll();
 
     const focusFrame = window.requestAnimationFrame(() => {
@@ -58,7 +62,7 @@ export const Modal = ({
     });
 
     const handleKeyDown = (event) => {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || modalStack.at(-1) !== modal) return;
 
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -89,6 +93,8 @@ export const Modal = ({
     return () => {
       window.cancelAnimationFrame(focusFrame);
       document.removeEventListener('keydown', handleKeyDown);
+      const stackIndex = modalStack.lastIndexOf(modal);
+      if (stackIndex >= 0) modalStack.splice(stackIndex, 1);
       unlockBodyScroll();
       if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
         previouslyFocused.focus({ preventScroll: true });
@@ -117,10 +123,12 @@ export const Modal = ({
         aria-label={ariaLabel || undefined}
         aria-labelledby={ariaLabelledBy || (!ariaLabel ? generatedLabelId : undefined)}
         tabIndex={-1}
-        className={`modal-surface outline-none ${className}`}
+        className={`modal-surface ${scrollable ? 'modal-scroll-frame' : ''} outline-none ${className}`}
         onPointerDown={(event) => event.stopPropagation()}
       >
-        {typeof children === 'function' ? children({ titleId: generatedLabelId }) : children}
+        {scrollable
+          ? <div className="modal-scroll-body">{typeof children === 'function' ? children({ titleId: generatedLabelId }) : children}</div>
+          : typeof children === 'function' ? children({ titleId: generatedLabelId }) : children}
       </div>
     </div>,
     document.body

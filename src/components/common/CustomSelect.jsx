@@ -192,9 +192,9 @@ export const CustomSelect = ({
         aria-controls={isOpen ? listboxId : undefined}
         aria-activedescendant={isOpen && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 flex-1 items-center gap-2">
           {Icon && <Icon className="h-4 w-4 shrink-0 text-gold-500" aria-hidden="true" />}
-          <span className={`${singleLine ? 'truncate' : 'whitespace-normal break-words'} ${selectedOption ? '' : 'font-normal text-slate-500 dark:text-slate-400'}`}>{displayLabel}</span>
+          <span className={`min-w-0 ${singleLine ? 'truncate' : 'whitespace-normal break-words'} ${selectedOption ? '' : 'font-normal text-slate-500 dark:text-slate-400'}`}>{displayLabel}</span>
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-gold-500' : ''}`} aria-hidden="true" />
       </button>
@@ -207,9 +207,10 @@ export const CustomSelect = ({
           aria-labelledby={ariaLabel ? undefined : triggerId}
           aria-label={ariaLabel}
           style={menuStyle}
-          className="dropdown-surface overflow-y-auto overscroll-contain rounded-2xl border border-gold-950/30 bg-white/98 p-1.5 shadow-2xl backdrop-blur-xl dark:border-gold-900/60 dark:bg-slate-900/98"
+          className="dropdown-surface dropdown-scroll-frame rounded-2xl border border-gold-950/30 bg-white/98 p-1.5 shadow-2xl backdrop-blur-xl dark:border-gold-900/60 dark:bg-slate-900/98"
           onKeyDown={handleKeyDown}
         >
+          <div className="dropdown-scroll-body">
           {normalizedOptions.length === 0 ? (
             <div className="px-3 py-3 text-center text-sm text-slate-500 dark:text-slate-400">No options available</div>
           ) : normalizedOptions.map((option, index) => {
@@ -234,11 +235,12 @@ export const CustomSelect = ({
                       : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800/70'
                 }`}
               >
-                <span className="whitespace-normal break-words pr-2">{option.label}</span>
+                <span className="min-w-0 flex-1 whitespace-normal break-words pr-2">{option.label}</span>
                 {isSelected && <Check className="h-4 w-4 shrink-0 text-gold-500" aria-hidden="true" />}
               </button>
             );
           })}
+          </div>
         </div>,
         document.body
       )}

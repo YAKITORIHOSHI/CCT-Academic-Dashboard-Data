@@ -484,8 +484,9 @@ export const BackupPage = () => {
         open={previewModalOpen && Boolean(selectedBackup)}
         onClose={() => setPreviewModalOpen(false)}
         ariaLabel="Backup snapshot payload preview"
-        className="w-full max-w-2xl space-y-4 rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6"
+        className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
       >
+        <div className="space-y-4 p-5 sm:p-6">
         {selectedBackup && (
           <div>
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
@@ -531,6 +532,7 @@ export const BackupPage = () => {
             </div>
           </div>
         )}
+        </div>
       </Modal>
 
       {/* Restore Modal */}
@@ -540,8 +542,9 @@ export const BackupPage = () => {
         ariaLabel="System database restore"
         closeOnBackdrop={!isRestoring}
         zIndex={110}
-        className="w-full max-w-lg space-y-4 rounded-2xl border border-slate-200 bg-white p-5 text-slate-900 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:p-6"
+        className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
       >
+          <div className="space-y-4 p-5 sm:p-6">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 System Database Restore
@@ -617,6 +620,7 @@ export const BackupPage = () => {
               </div>
 
             </div>
+          </div>
       </Modal>
 
       <Toast

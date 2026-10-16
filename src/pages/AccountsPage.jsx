@@ -280,8 +280,9 @@ export const AccountsPage = () => {
         onClose={() => setIsModalOpen(false)}
         align="bottom"
         ariaLabel={editingUser ? 'Edit account' : 'Create account'}
-        className="w-full max-w-lg overflow-y-auto overscroll-contain rounded-t-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:rounded-2xl sm:p-6"
+        className="w-full max-w-lg overscroll-contain rounded-t-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 sm:rounded-2xl"
       >
+          <div className="p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4"><div><div className="text-xs font-semibold tracking-normal text-crimson-600 dark:text-crimson-400">VPAA Access Control</div><h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{editingUser ? 'Edit Account' : 'Create Account'}</h2></div><button type="button" onClick={() => setIsModalOpen(false)} aria-label="Close Account Form" className="control-lift icon-control grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"><X className="h-4 w-4" /></button></div>
             <form onSubmit={handleSubmit} className="mt-5 space-y-3">
               {formError && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700 dark:border-rose-800 dark:bg-rose-950/60 dark:text-rose-300">{formError}</div>}
@@ -325,6 +326,7 @@ export const AccountsPage = () => {
               </div>
               <div className="flex flex-col-reverse gap-2 pt-3 sm:flex-row sm:justify-end"><button type="button" onClick={() => setIsModalOpen(false)} className="control-lift min-h-11 rounded-xl bg-slate-100 px-4 text-sm font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">Cancel</button><button type="submit" disabled={isSaving} className="primary-action button-shine min-h-11 rounded-xl bg-crimson-600 px-5 text-sm font-bold text-white hover:bg-crimson-700 disabled:cursor-wait disabled:opacity-60">{isSaving ? 'Saving…' : editingUser ? 'Save Changes' : 'Create Account'}</button></div>
             </form>
+          </div>
       </Modal>
 
       <ConfirmDialog
