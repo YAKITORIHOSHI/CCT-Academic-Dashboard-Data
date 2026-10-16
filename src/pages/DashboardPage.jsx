@@ -1,305 +1,116 @@
-import React, { useMemo } from 'react';
-import { useAuth } from '../context/AuthContext';
+import React, { useMemo, useState } from 'react';
+import { ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, GraduationCap, TrendingUp, Users } from 'lucide-react';
+import { useAuth } from '../context/auth';
+import { useAcademicData } from '../context/academicData';
+import { AggregateChart } from '../components/common/AggregateChart';
 import { StatCard } from '../components/common/StatCard';
-import {
-  ArrowRight,
-  Building2,
-  CheckCircle2,
-  ClipboardCheck,
-  FileCheck2,
-  GraduationCap,
-  ShieldCheck,
-  TrendingUp,
-  Users
-} from 'lucide-react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis
-} from 'recharts';
+import { CustomSelect } from '../components/common/CustomSelect';
 import { RECORD_STATUS } from '../utils/academic';
 
-const COLORS = ['#0284c7', '#38bdf8', '#0f2b5c', '#14b8a6', '#6366f1', '#0369a1'];
+const unitName = (name) => String(name || '').replace(/^School of\s+|^Office of\s+/i, '');
 
-const shortDepartmentName = (department) => {
-  const name = typeof department === 'string'
-    ? department
-    : (department?.name || department?.id || String(department || ''));
-  return name
-    .replace(/^School of\s+/i, '')
-    .replace(/^Office of\s+/i, '')
-    .trim();
-};
-
-export const DashboardPage = ({ setActiveTab, isDarkMode }) => {
-  const { currentUser, records, accounts, departments, permissions } = useAuth();
-
-  const approvedYears = useMemo(() => Array.from(new Set(
-    records
-      .filter((record) => record.status === RECORD_STATUS.APPROVED)
-      .map((record) => record.academicYear)
-      .filter(Boolean)
-  )).sort().reverse(), [records]);
-
-  const activeAcademicYear = approvedYears[0] || 'No approved academic year';
-  const roleScopedRecords = records.filter((record) => (
-    permissions.canViewAllDepartments || record.department === currentUser?.department
-  ));
-  const approvedRecords = roleScopedRecords.filter((record) => (
-    record.status === RECORD_STATUS.APPROVED && record.academicYear === activeAcademicYear
-  ));
-  const pendingRecords = roleScopedRecords.filter((record) => record.status === RECORD_STATUS.PENDING);
-  const returnedRecords = roleScopedRecords.filter((record) => record.status === RECORD_STATUS.RETURNED);
-
-  const totalEnrolled = approvedRecords.reduce((total, record) => total + (Number(record.enrolledCount) || 0), 0);
-  const totalPassed = approvedRecords.reduce((total, record) => total + (Number(record.passedCount) || 0), 0);
-  const overallPassingRate = totalEnrolled > 0 ? ((totalPassed / totalEnrolled) * 100).toFixed(2) : '0.00';
-
-  const departmentChartData = departments.map((department) => {
-    const departmentRecords = approvedRecords.filter((record) => record.department === department);
-    const enrolled = departmentRecords.reduce((total, record) => total + (Number(record.enrolledCount) || 0), 0);
-    const passed = departmentRecords.reduce((total, record) => total + (Number(record.passedCount) || 0), 0);
-    return {
-      department: shortDepartmentName(department),
-      fullName: department,
-      enrolled,
-      passed,
-      passingRate: enrolled > 0 ? Number(((passed / enrolled) * 100).toFixed(2)) : 0
-    };
-  }).filter((item) => permissions.canViewAllDepartments ? item.enrolled > 0 : item.fullName === currentUser?.department);
-
-  const enrollmentShare = departmentChartData.filter((item) => item.enrolled > 0).map((item) => ({
-    name: item.department,
-    value: item.enrolled
+export const DashboardPage = ({ setActiveTab }) => {
+  const { currentUser, records, accounts, permissions, dataSync, isFirebaseConnected } = useAuth();
+  const { annualReports, topcit } = useAcademicData();
+  const [selectedYear, setSelectedYear] = useState('');
+  const scopedRecords = useMemo(() => records.filter((record) => permissions.canViewAllDepartments
+    || record.department === currentUser?.department), [records, permissions.canViewAllDepartments, currentUser?.department]);
+  const years = useMemo(() => [...new Set([...scopedRecords.filter((r) => r.status === RECORD_STATUS.APPROVED), ...annualReports, ...topcit]
+    .map((r) => r.academicYear).filter(Boolean))].sort().reverse(), [scopedRecords, annualReports, topcit]);
+  const activeYear = years.includes(selectedYear) ? selectedYear : years[0] || '';
+  const summary = useMemo(() => {
+    const approved = []; const pending = []; const returned = []; const units = new Map();
+    let enrolled = 0; let passed = 0;
+    for (const record of scopedRecords) {
+      if (record.status === RECORD_STATUS.PENDING) pending.push(record);
+      if (record.status === RECORD_STATUS.RETURNED) returned.push(record);
+      if (record.status !== RECORD_STATUS.APPROVED || record.academicYear !== activeYear) continue;
+      approved.push(record);
+      const count = Number(record.enrolledCount) || 0;
+      const successes = Number(record.passedCount) || 0;
+      enrolled += count; passed += successes;
+      const unit = units.get(record.department) || { name: record.department, enrolled: 0, passed: 0, records: 0 };
+      unit.enrolled += count; unit.passed += successes; unit.records += 1;
+      units.set(record.department, unit);
+    }
+    return { approved, pending, returned, enrolled, passed,
+      rate: enrolled ? (passed / enrolled * 100).toFixed(1) : '0.0',
+      units: [...units.values()].sort((a,b) => b.enrolled - a.enrolled) };
+  }, [scopedRecords, activeYear]);
+  const activePeople = accounts.filter((account) => account.status === 'Active' && account.uid
+    && (permissions.canViewAllDepartments || account.department === currentUser?.department)).length;
+  const outcomes = ['passedCount','failedCount','droppedCount','incCount'].map((field,index) => ({
+    label: ['Passed','Failed','Dropped','Incomplete'][index], value: summary.approved.reduce((sum,row) => sum + Number(row[field] || 0), 0)
   }));
-
-  const roleDescription = permissions.isVPAA
-    ? 'Full administrative access across academic records, approvals, accounts, reports, and system recovery.'
-    : permissions.isPresident
-      ? 'Executive oversight of approved institutional performance. Data changes are restricted.'
-      : permissions.isDean
-        ? `Review, edit, and approve academic records for ${currentUser?.department || 'your department'}.`
-        : `Encode and submit performance records for ${currentUser?.department || 'your department'}.`;
-
-  const primaryAction = permissions.isPresident
-    ? { label: 'Open Reports', tab: 'reports' }
-    : permissions.isDean || permissions.isVPAA
-      ? { label: pendingRecords.length ? `Review ${pendingRecords.length} Pending` : 'Manage Records', tab: 'records' }
-      : { label: 'Encode Record', tab: 'records' };
+  const annual = annualReports.find((report) => report.academicYear === activeYear);
+  const topcitAnnual = topcit.find((report) => report.academicYear === activeYear);
+  const recent = useMemo(() => [...scopedRecords].sort((a,b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))).slice(0,4), [scopedRecords]);
+  const actionLabel = permissions.isPresident ? 'View Reports' : permissions.isHead ? 'Encode a Record' : 'Review Records';
+  const nextActions = permissions.isPresident
+    ? [{ count: summary.approved.length, title: 'Approved Reports', text: 'Open the official academic report.', tab: 'reports' }]
+    : [
+      { count: summary.pending.length, title: permissions.isHead ? 'Submitted for Review' : 'Awaiting Your Review', text: permissions.isHead ? 'Track records submitted to your dean.' : 'Review submissions before they enter reports.', tab: 'records' },
+      { count: summary.returned.length, title: 'Returned for Revision', text: 'Open the reviewer’s notes and corrections.', tab: 'records' }
+    ];
 
   return (
-    <div className="page-stack space-y-4 sm:space-y-5">
-      <section className="hero-panel hero-motion relative overflow-hidden rounded-3xl border border-sky-500/30 bg-gradient-to-br from-slate-950 via-blue-950 to-sky-950 p-5 text-white sm:p-6 lg:p-7 shadow-xl shadow-sky-950/40">
-        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-sky-500/25 blur-3xl" />
-        <div className="absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-blue-600/20 blur-3xl" />
-        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-2xl border-2 border-sky-400/50 bg-gradient-to-br from-blue-900 via-sky-900 to-slate-900 text-xl font-black text-sky-100 shadow-xl shadow-sky-950/60 ring-2 ring-sky-400/20 sm:h-16 sm:w-16 sm:text-2xl">
-              {currentUser?.avatarUrl ? (
-                <img src={currentUser.avatarUrl} alt={currentUser.name} className="h-full w-full aspect-square object-cover object-center" />
-              ) : (
-                currentUser?.name?.charAt(0) || 'U'
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="mb-1 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-sky-400">
-                <Building2 className="h-4 w-4" />
-                Academic affairs command center
-              </div>
-              <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Welcome, {currentUser?.name}</h1>
-              <p className="mt-2 max-w-3xl text-xs leading-relaxed text-sky-100/90 sm:text-sm">{roleDescription}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-blue-900/40 px-3 py-1.5 text-[10px] font-bold text-sky-200">
-                  <ShieldCheck className="h-3.5 w-3.5 text-sky-400" /> {currentUser?.role}
-                </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-blue-900/40 px-3 py-1.5 text-[10px] font-bold text-sky-200">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Reporting cycle: {activeAcademicYear}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <button
-              type="button"
-              onClick={() => setActiveTab(primaryAction.tab)}
-              className="hero-action button-shine inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-300 hover:to-blue-400 px-4 text-xs font-black text-slate-950 transition shadow-lg shadow-sky-500/25 cursor-pointer"
-            >
-              {primaryAction.label}<ArrowRight className="h-4 w-4" />
-            </button>
-            {!permissions.isPresident && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('reports')}
-                className="glass-control control-lift min-h-11 rounded-xl border border-sky-400/30 bg-blue-950/40 px-4 text-xs font-bold text-sky-200 transition hover:bg-blue-900/60 cursor-pointer"
-              >
-                View Reports
-              </button>
-            )}
-          </div>
+    <div className="page-stack space-y-6">
+      <section className="workspace-heading flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
+        <div>
+          <p className="workspace-eyebrow">CCT Academic Affairs · {permissions.canViewAllDepartments ? 'College-Wide View' : unitName(currentUser?.department)}</p>
+          <h1 className="workspace-title">CCT Academic Overview</h1>
+          <p className="workspace-subtitle">A clear view of performance, submissions, and the work that needs your attention.</p>
+        </div>
+        <div className="overview-actions">
+          <button type="button" onClick={() => setActiveTab(permissions.isPresident ? 'reports' : 'records')} className="primary-action inline-flex items-center gap-2">
+            {actionLabel}<ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Approved Passing Rate"
-          value={`${overallPassingRate}%`}
-          subtitle={`${totalPassed.toLocaleString()} passed of ${totalEnrolled.toLocaleString()} enrolled`}
-          icon={TrendingUp}
-          color="blue"
-        />
-        <StatCard
-          title="Approved Enrollment"
-          value={totalEnrolled.toLocaleString()}
-          subtitle={`Official data for ${activeAcademicYear}`}
-          icon={GraduationCap}
-          color="emerald"
-        />
-        <StatCard
-          title="Pending Dean Review"
-          value={pendingRecords.length}
-          subtitle={pendingRecords.length ? 'Records awaiting an approval decision' : 'Approval queue is clear'}
-          icon={ClipboardCheck}
-          color="amber"
-        />
-        <StatCard
-          title="Active Personnel"
-          value={accounts.filter((account) => account.status === 'Active').length}
-          subtitle="VPAA, President, Deans, and Heads"
-          icon={Users}
-          color="violet"
-        />
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="academic-year-chip"><CalendarDays className="h-4 w-4" aria-hidden="true" />Academic Year</span>
+          <div className="w-full sm:w-48">
+            <CustomSelect value={activeYear} onChange={setSelectedYear} options={years} placeholder="No approved records" ariaLabel="Academic Year" disabled={!years.length} />
+          </div>
+        </div>
+        <p className="sync-note" role="status"><span className="sync-dot" style={{ background: dataSync?.status === 'error' ? '#b43c4e' : isFirebaseConnected ? '#25734f' : '#99702c' }} />
+          {dataSync?.pendingWrites ? 'Saving changes…' : dataSync?.status === 'error' ? 'Updates need attention' : !isFirebaseConnected ? 'Offline · Last available data' : dataSync?.status === 'syncing' ? 'Updating records…' : 'Live updates enabled'}
+        </p>
+      </div>
+
+      <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Academic performance summary">
+        <StatCard title="Passing Rate" value={`${summary.rate}%`} subtitle={`${summary.passed.toLocaleString()} passing outcomes`} icon={TrendingUp} color="blue" />
+        <StatCard title="Approved Enrollment" value={summary.enrolled.toLocaleString()} subtitle={`${summary.approved.length} approved subject records`} icon={GraduationCap} color="emerald" />
+        <StatCard title="Pending Review" value={summary.pending.length} subtitle={summary.pending.length ? 'Submissions awaiting a decision' : 'No outstanding submissions'} icon={ClipboardCheck} color="amber" />
+        <StatCard title={permissions.isVPAA ? 'Active CCT Personnel' : 'My CCT Account'} value={permissions.isVPAA ? activePeople : currentUser?.status || 'Active'} subtitle={permissions.isVPAA ? 'Across City College of Tagaytay' : 'Your verified CCT access'} icon={Users} color="violet" />
       </section>
 
-      {(pendingRecords.length > 0 || returnedRecords.length > 0) && (
-        <section className="grid gap-3 lg:grid-cols-2">
-          {pendingRecords.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('records')}
-              className="notice-card flex items-center gap-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-left text-sky-800 transition hover:border-sky-300 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:border-sky-800"
-            >
-              <span className="notice-icon grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300"><ClipboardCheck className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-black text-sky-950 dark:text-sky-100">{pendingRecords.length} pending approval{pendingRecords.length === 1 ? '' : 's'}</span>
-                <span className="mt-0.5 block text-[11px] text-sky-700 dark:text-sky-300/80">Review submitted records before they enter official reports.</span>
-              </span>
-              <ArrowRight className="notice-arrow h-4 w-4 shrink-0 text-sky-600" />
-            </button>
-          )}
-          {returnedRecords.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('records')}
-              className="notice-card flex items-center gap-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-left text-rose-700 transition hover:border-rose-300 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:border-rose-800"
-            >
-              <span className="notice-icon grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"><FileCheck2 className="h-5 w-5" /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-black text-rose-950 dark:text-rose-100">{returnedRecords.length} returned record{returnedRecords.length === 1 ? '' : 's'}</span>
-                <span className="mt-0.5 block text-[11px] text-rose-700 dark:text-rose-300/80">Corrections are required before resubmission.</span>
-              </span>
-              <ArrowRight className="notice-arrow h-4 w-4 shrink-0 text-rose-600" />
-            </button>
-          )}
-        </section>
-      )}
+      <section className="grid gap-6 xl:grid-cols-2">
+        <AggregateChart title="CCT Academic Outcomes" description="Aggregate subject outcomes from approved records. These are course enrollments, not unique student headcounts." items={outcomes} hasData={summary.approved.length > 0} />
+        <AggregateChart title="CCT TOPCIT Achieved Levels" description={topcitAnnual ? topcitAnnual.total + ' participants · ' + activeYear : 'Annual participant totals and certificate levels appear after the CCT summary is submitted.'} hasData={Boolean(topcitAnnual)} items={[1,2,3,4,5].map((level) => ({label:'Level '+level,value:Number(topcitAnnual?.['level'+level] || 0)}))} />
+      </section>
+      <section className="surface-panel p-6 flex flex-wrap items-center justify-between gap-4">
+        <div><h2 className="section-heading">CCT Annual Student Enrollment</h2><p className="muted-copy mt-1">{annual ? annual.total.toLocaleString() + ' students · ' + activeYear : 'No college-wide annual report submitted for this Academic Year.'}</p></div>
+        <button className="control-lift" onClick={() => setActiveTab('annualReports')}>View Annual Reports</button>
+      </section>
 
-      <section className="grid gap-4 xl:grid-cols-3">
-        <div className="surface-panel surface-panel-hover chart-panel interactive-surface relative rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 sm:p-5 xl:col-span-2">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-sm font-black text-slate-950 dark:text-white">Approved Passing Rate by Academic Unit</h2>
-              <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">Only dean/VPAA-approved records are included.</p>
-            </div>
-            <span className="w-fit rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[10px] font-bold text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-300">{activeAcademicYear}</span>
-          </div>
-
-          <div className="mt-4 h-64 w-full sm:h-72">
-            {departmentChartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={departmentChartData} margin={{ top: 10, right: 8, left: -22, bottom: 6 }}>
-                  <defs>
-                    <linearGradient id="passingRateGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#38bdf8" />
-                      <stop offset="100%" stopColor="#0284c7" />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? '#334155' : '#e2e8f0'} />
-                  <XAxis dataKey="department" tick={{ fontSize: 10, fill: isDarkMode ? '#94a3b8' : '#64748b' }} interval={0} angle={departmentChartData.length > 4 ? -12 : 0} textAnchor={departmentChartData.length > 4 ? 'end' : 'middle'} height={departmentChartData.length > 4 ? 55 : 35} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: isDarkMode ? '#94a3b8' : '#64748b' }} unit="%" />
-                  <Tooltip
-                    cursor={{ fill: isDarkMode ? 'rgba(56, 189, 248, 0.08)' : 'rgba(2, 132, 199, 0.05)' }}
-                    formatter={(value) => [`${value}%`, 'Passing rate']}
-                    labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName || ''}
-                    contentStyle={{
-                      backgroundColor: isDarkMode ? '#0f172a' : '#ffffff',
-                      borderColor: isDarkMode ? '#334155' : '#e2e8f0',
-                      borderRadius: 14,
-                      boxShadow: isDarkMode ? '0 18px 38px -18px rgba(0, 0, 0, 0.9)' : '0 18px 38px -20px rgba(15, 23, 42, 0.32)',
-                      fontSize: 11
-                    }}
-                  />
-                  <Bar
-                    dataKey="passingRate"
-                    fill="url(#passingRateGradient)"
-                    radius={[8, 8, 0, 0]}
-                    maxBarSize={58}
-                    animationDuration={720}
-                    activeBar={{ fill: '#7dd3fc', stroke: isDarkMode ? '#bae6fd' : '#0284c7', strokeWidth: 1 }}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="grid h-full place-items-center rounded-xl border border-dashed border-slate-300 text-xs text-slate-400 dark:border-slate-700">No approved records are available for this reporting cycle.</div>
-            )}
-          </div>
-        </div>
-
-        <div className="surface-panel surface-panel-hover chart-panel interactive-surface relative rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-          <h2 className="text-sm font-black text-slate-950 dark:text-white">Enrollment Distribution</h2>
-          <p className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">Approved enrollment share by academic unit.</p>
-          <div className="h-52 w-full">
-            {enrollmentShare.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={enrollmentShare} cx="50%" cy="50%" innerRadius={45} outerRadius={72} paddingAngle={4} dataKey="value" animationDuration={720}>
-                    {enrollmentShare.map((item, index) => <Cell key={item.name} fill={COLORS[index % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip
-                    formatter={(value) => [`${Number(value).toLocaleString()} students`, 'Enrolled']}
-                    contentStyle={{
-                      backgroundColor: isDarkMode ? '#0f172a' : '#ffffff',
-                      borderColor: isDarkMode ? '#334155' : '#e2e8f0',
-                      borderRadius: 14,
-                      boxShadow: isDarkMode ? '0 18px 38px -18px rgba(0, 0, 0, 0.9)' : '0 18px 38px -20px rgba(15, 23, 42, 0.32)',
-                      fontSize: 11
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="grid h-full place-items-center text-xs text-slate-400">No approved enrollment data.</div>
-            )}
-          </div>
-          <div className="space-y-2">
-            {enrollmentShare.map((item, index) => (
-              <div key={item.name} className="legend-row flex items-center justify-between gap-3 px-2 py-1.5 text-[10px]">
-                <div className="flex min-w-0 items-center gap-2 text-slate-600 dark:text-slate-300">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                  <span className="truncate font-semibold">{item.name}</span>
-                </div>
-                <span className="font-mono font-bold text-slate-500 dark:text-slate-400">{item.value.toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <article className="surface-panel p-5 sm:p-6">
+          <div className="flex items-center justify-between gap-3"><h2 className="section-heading">Recent Academic Records</h2><button type="button" onClick={() => setActiveTab('records')} className="inline-flex items-center gap-1 text-sm font-semibold text-crimson-700 dark:text-crimson-300">View All<ArrowRight className="h-4 w-4" aria-hidden="true" /></button></div>
+          <div className="mt-4 space-y-1">{recent.length ? recent.map((record) => <button key={record.id} type="button" onClick={() => setActiveTab('records')} className="unit-row flex w-full items-center justify-between gap-3 text-left">
+            <div className="min-w-0"><p className="text-sm font-semibold">{record.subjectCode} <span className="font-normal">· {record.subjectTitle}</span></p><p className="muted-copy mt-1">{unitName(record.department)} · {record.academicYear}</p></div>
+            <span className="academic-year-chip shrink-0">{record.status}</span>
+          </button>) : <div className="empty-work">Your academic record history will appear here.</div>}</div>
+        </article>
+        <article className="surface-panel p-5 sm:p-6">
+          <h2 className="section-heading">Your Next Steps</h2><p className="muted-copy mt-1">CCT workspace · {currentUser?.role}</p>
+          {nextActions.map((action) => <button type="button" key={action.title} className="task-row" onClick={() => setActiveTab(action.tab)}>
+            <span className="task-count">{action.count}</span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{action.title}</span><span className="muted-copy mt-1 block">{action.text}</span></span><ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+          </button>)}
+          {summary.pending.length === 0 && summary.returned.length === 0 && <p className="muted-copy mt-5 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-700 dark:text-emerald-300" />Your reporting queue is clear.</p>}
+        </article>
       </section>
     </div>
   );

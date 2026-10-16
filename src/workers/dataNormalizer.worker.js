@@ -1,22 +1,4 @@
-const collectionToArray = (value) => {
-  if (Array.isArray(value)) {
-    return value.filter(Boolean).map((item, index) => (
-      item && typeof item === 'object'
-        ? { id: item.id || `item_${index}`, ...item }
-        : item
-    ));
-  }
-
-  if (value && typeof value === 'object') {
-    return Object.entries(value).map(([key, item]) => (
-      item && typeof item === 'object'
-        ? { id: item.id || key, ...item }
-        : { id: key, name: String(item), value: item }
-    ));
-  }
-
-  return [];
-};
+import { firebaseCollectionRows } from '../services/firebaseSafety.js';
 
 const normalizeAcademicYear = (value) => {
   const trimmed = String(value || '').trim();
@@ -34,7 +16,7 @@ const normalizeRecords = (items) => items.map((record) => {
   return {
     ...record,
     academicYear: normalizeAcademicYear(record.academicYear),
-    status: record.status || 'Approved',
+    status: record.status || 'Draft',
     enrolledCount,
     passedCount,
     failedCount,
@@ -70,7 +52,7 @@ self.onmessage = (event) => {
   const { requestId, collection, value } = event.data || {};
 
   try {
-    const items = collectionToArray(value);
+    const items = firebaseCollectionRows(value, { allowStrings: collection === 'departments' });
     let result = items;
 
     if (collection === 'requests') result = normalizeRecords(items);

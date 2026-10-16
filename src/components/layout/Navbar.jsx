@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../context/auth';
 import schoolLogo from '../../assets/school-logo.png';
 import {
   Building,
@@ -117,19 +117,20 @@ export const Navbar = ({ setActiveTab, isMobileMenuOpen, setIsMobileMenuOpen }) 
           <button
             type="button"
             onClick={() => setActiveTab?.('dashboard')}
-            className="flex min-w-0 cursor-pointer items-center gap-2.5 text-left rounded-xl transition hover:opacity-90 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 sm:gap-3"
+            className="flex min-w-0 cursor-pointer items-center gap-2.5 text-left rounded-xl transition hover:opacity-90 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500 sm:gap-3"
             title="Go to Overview dashboard"
             aria-label="Go to Overview dashboard"
           >
-            <div className="brand-mark flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-sky-400/40 bg-gradient-to-b from-blue-950 to-slate-950 p-1 shadow-lg shadow-sky-950/40 sm:h-11 sm:w-11">
-              <img src={schoolLogo} alt="NCI Logo" width="350" height="459" className="h-full w-auto translate-y-[1px] object-contain drop-shadow-[0_1px_3px_rgba(56,189,248,0.4)]" />
+            <div className="brand-mark flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gold-400/40 bg-gradient-to-b from-crimson-950 to-slate-950 p-1 shadow-lg shadow-gold-950/40 sm:h-11 sm:w-11">
+              <img src={schoolLogo} alt="CCT Logo" width="135" height="179" className="h-full w-auto object-contain drop-shadow-[0_1px_3px_rgba(212,175,55,0.4)]" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-black tracking-tight text-slate-950 dark:text-white sm:text-base">Natsuki College of Imus</span>
-                <span className="hidden rounded-md border border-sky-500/40 bg-blue-950/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-700 dark:border-sky-400/40 dark:bg-sky-950/60 dark:text-sky-300 sm:inline">NCI</span>
+                <span className="hidden truncate text-sm font-semibold tracking-tight text-slate-950 dark:text-white sm:block sm:text-base">City College of Tagaytay</span>
+                <span className="truncate text-sm font-semibold text-slate-950 dark:text-white sm:hidden">CCT Workspace</span>
+                <span className="hidden rounded-md border border-gold-500/40 bg-crimson-950/20 px-1.5 py-0.5 font-mono text-xs font-bold text-gold-700 dark:border-gold-400/40 dark:bg-gold-950/60 dark:text-gold-300 sm:inline">CCT</span>
               </div>
-              <p className="truncate text-[10px] text-slate-500 dark:text-slate-400 sm:text-[11px]">Academic Performance Monitoring System</p>
+              <p className="truncate text-xs text-slate-500 dark:text-slate-400 sm:text-xs">CCT Academic Affairs</p>
             </div>
           </button>
         </div>
@@ -139,23 +140,19 @@ export const Navbar = ({ setActiveTab, isMobileMenuOpen, setIsMobileMenuOpen }) 
             ref={triggerRef}
             type="button"
             onClick={() => setShowUserDropdown((open) => !open)}
-            className="control-lift flex h-10 max-w-[12rem] items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-950/10 px-2 transition hover:bg-sky-900/20 dark:border-sky-800/60 dark:bg-sky-950/40 sm:max-w-[18rem] sm:px-3"
+            className="account-menu-trigger control-lift flex h-10 max-w-[12rem] items-center gap-2 rounded-xl border border-gold-500/30 bg-gold-950/10 px-2 transition hover:bg-gold-900/20 dark:border-gold-800/60 dark:bg-gold-950/40 sm:max-w-[18rem] sm:px-3"
             aria-expanded={showUserDropdown}
             aria-haspopup="menu"
             aria-label="Open user account menu"
           >
-            <span className="flex h-7 w-7 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-lg border border-sky-400/40 bg-gradient-to-br from-blue-900 to-sky-700 text-xs font-black text-sky-200">
-              {currentUser?.avatarUrl ? (
-                <img src={currentUser.avatarUrl} alt={currentUser.name} className="h-full w-full aspect-square object-cover object-center" />
-              ) : (
-                currentUser?.name?.charAt(0) || 'U'
-              )}
+            <span className="flex h-7 w-7 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-lg border border-gold-400/40 bg-gradient-to-br from-crimson-900 to-gold-700 text-sm font-semibold text-gold-200">
+              {currentUser?.name?.charAt(0) || 'U'}
             </span>
             <span className="hidden min-w-0 text-left sm:block">
-              <span className="block truncate text-[11px] font-bold text-slate-900 dark:text-white">{currentUser?.name}</span>
-              <span className="block truncate text-[9px] text-slate-500 dark:text-slate-400">{currentUser?.role}</span>
+              <span className="block truncate text-xs font-bold text-slate-900 dark:text-white">{currentUser?.name}</span>
+              <span className="block truncate text-xs text-slate-500 dark:text-slate-400">{currentUser?.role}</span>
             </span>
-            <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition ${showUserDropdown ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400 transition ${showUserDropdown ? 'rotate-180' : ''}`} />
           </button>
         </div>
       </div>
@@ -166,28 +163,24 @@ export const Navbar = ({ setActiveTab, isMobileMenuOpen, setIsMobileMenuOpen }) 
           role="menu"
           style={menuStyle}
           onPointerDown={(event) => event.stopPropagation()}
-          className="dropdown-surface overflow-y-auto rounded-2xl border border-sky-950/30 bg-white shadow-2xl dark:border-sky-900/60 dark:bg-slate-900"
+          className="dropdown-surface overflow-y-auto rounded-2xl border border-gold-950/30 bg-white shadow-2xl dark:border-gold-900/60 dark:bg-slate-900"
         >
-          <div className="border-b border-slate-100 bg-gradient-to-br from-blue-950/10 to-transparent p-4 dark:border-slate-800">
+          <div className="border-b border-slate-100 bg-gradient-to-br from-crimson-950/10 to-transparent p-4 dark:border-slate-800">
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-xl border border-sky-400/40 bg-gradient-to-br from-blue-900 to-sky-700 text-sm font-black text-sky-200">
-                {currentUser?.avatarUrl ? (
-                  <img src={currentUser.avatarUrl} alt={currentUser.name} className="h-full w-full aspect-square object-cover object-center" />
-                ) : (
-                  currentUser?.name?.charAt(0) || 'U'
-                )}
+              <span className="flex h-10 w-10 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-xl border border-gold-400/40 bg-gradient-to-br from-crimson-900 to-gold-700 text-sm font-semibold text-gold-200">
+                {currentUser?.name?.charAt(0) || 'U'}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-bold text-slate-900 dark:text-white">{currentUser?.name}</p>
-                <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">{currentUser?.email}</p>
+                <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{currentUser?.name}</p>
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">{currentUser?.email}</p>
               </div>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-2 text-[10px] dark:border-slate-800/80">
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-2 text-xs dark:border-slate-800/80">
               <span className="flex min-w-0 items-center gap-1 text-slate-500 dark:text-slate-400">
-                <Building className="h-3 w-3 shrink-0 text-sky-500" />
+                <Building className="h-3 w-3 shrink-0 text-gold-500" />
                 <span className="truncate">{currentUser?.department}</span>
               </span>
-              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] ${roleBadgeClass(currentUser?.role)}`}>{currentUser?.role}</span>
+              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs ${roleBadgeClass(currentUser?.role)}`}>{currentUser?.role}</span>
             </div>
           </div>
 
@@ -199,7 +192,7 @@ export const Navbar = ({ setActiveTab, isMobileMenuOpen, setIsMobileMenuOpen }) 
                 setActiveTab?.('settings');
                 setShowUserDropdown(false);
               }}
-              className="menu-option flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-slate-700 transition hover:bg-rose-950/10 dark:text-slate-200 dark:hover:bg-rose-950/40"
+              className="menu-option flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-rose-950/10 dark:text-slate-200 dark:hover:bg-rose-950/40"
             >
               <Sliders className="h-4 w-4 text-amber-500" />
               <span>Settings</span>
@@ -214,7 +207,7 @@ export const Navbar = ({ setActiveTab, isMobileMenuOpen, setIsMobileMenuOpen }) 
                 logout();
                 setShowUserDropdown(false);
               }}
-              className="menu-option flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs font-semibold text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/50"
+              className="menu-option flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/50"
             >
               <LogOut className="h-4 w-4 text-rose-500" />
               <span>Sign Out of Account</span>

@@ -1,0 +1,636 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "access": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": false
+      }
+    },
+    "accounts": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('role').val() === 'VPAA'",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('accountId').val() === $id",
+        "name": {
+          ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('accountId').val() === $id && newData.exists()",
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100"
+        },
+        "$other": {
+          ".write": false
+        }
+      }
+    },
+    "requests": {
+      ".indexOn": [
+        "department",
+        "status"
+      ],
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || (root.child('access').child(auth.uid).child('role').val() === 'President' && query.orderByChild === 'status' && query.equalTo === 'Approved') || ((root.child('access').child(auth.uid).child('role').val() === 'Heads' || root.child('access').child(auth.uid).child('role').val() === 'Deans') && query.orderByChild === 'department' && query.equalTo === root.child('access').child(auth.uid).child('department').val()))",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || (root.child('access').child(auth.uid).child('role').val() === 'President' && data.child('status').val() === 'Approved') || ((root.child('access').child(auth.uid).child('role').val() === 'Heads' || root.child('access').child(auth.uid).child('role').val() === 'Deans') && data.child('department').val() === root.child('access').child(auth.uid).child('department').val()))",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || (root.child('access').child(auth.uid).child('role').val() === 'Heads' && data.child('encodedByUid').val() === auth.uid && data.child('status').val() !== 'Approved')) && data.child('department').val() === root.child('access').child(auth.uid).child('department').val() && (!newData.exists() || newData.child('department').val() === root.child('access').child(auth.uid).child('department').val())) || (!data.exists() && newData.exists() && (root.child('access').child(auth.uid).child('role').val() === 'Heads' || root.child('access').child(auth.uid).child('role').val() === 'Deans') && newData.child('department').val() === root.child('access').child(auth.uid).child('department').val() && newData.child('encodedByUid').val() === auth.uid)) && (newData.exists() || root.child('access').child(auth.uid).child('role').val() === 'VPAA' || data.child('status').val() !== 'Approved')",
+        ".validate": "newData.hasChildren([\"id\",\"department\",\"subjectCode\",\"subjectTitle\",\"academicYear\",\"semester\",\"encodedByUid\",\"modifiedByUid\",\"enrolledCount\",\"passedCount\",\"failedCount\",\"droppedCount\",\"incCount\",\"averageGrade\",\"status\",\"revision\"]) && newData.child('passedCount').val() + newData.child('failedCount').val() + newData.child('droppedCount').val() + newData.child('incCount').val() <= newData.child('enrolledCount').val() && newData.child('modifiedByUid').val() === auth.uid && ((!data.exists() && newData.child('encodedByUid').val() === auth.uid) || (data.exists() && (newData.child('encodedByUid').val() === data.child('encodedByUid').val() || (root.child('access').child(auth.uid).child('role').val() === 'VPAA' && !data.child('encodedByUid').exists() && newData.child('encodedByUid').val() === auth.uid)))) && (root.child('access').child(auth.uid).child('role').val() !== 'Heads' || (newData.child('status').val() === 'Pending Dean Approval' && newData.child('approvedBy').val() === '' && newData.child('approvedByUid').val() === '' && newData.child('approvedAt').val() === '' && newData.child('reviewedByUid').val() === '')) && (newData.child('status').val() !== 'Approved' || newData.child('approvedByUid').val() === auth.uid || (data.child('status').val() === 'Approved' && newData.child('approvedByUid').val() === data.child('approvedByUid').val())) && (!newData.child('reviewedByUid').exists() || newData.child('reviewedByUid').val() === '' || newData.child('reviewedByUid').val() === auth.uid || newData.child('reviewedByUid').val() === data.child('reviewedByUid').val()) && ((!data.exists() && newData.child('encodedBy').val() === root.child('accounts').child(root.child('access').child(auth.uid).child('accountId').val()).child('name').val() && newData.child('encodedById').val() === root.child('access').child(auth.uid).child('accountId').val()) || (data.exists() && newData.child('encodedBy').val() === data.child('encodedBy').val() && newData.child('encodedById').val() === data.child('encodedById').val())) && (newData.child('status').val() !== 'Approved' || (newData.child('approvedByUid').val() === auth.uid && newData.child('approvedBy').val() === root.child('accounts').child(root.child('access').child(auth.uid).child('accountId').val()).child('name').val()) || (newData.child('approvedByUid').val() === data.child('approvedByUid').val() && newData.child('approvedBy').val() === data.child('approvedBy').val())) && (root.child('access').child(auth.uid).child('role').val() !== 'Heads' || (newData.child('reviewedBy').val() === '' && newData.child('reviewedAt').val() === '' && newData.child('reviewNote').val() === ''))",
+        "department": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "subjectCode": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "subjectTitle": {
+          ".validate": "newData.isString() && newData.val().length <= 250 && newData.val().length > 0"
+        },
+        "academicYear": {
+          ".validate": "newData.isString() && newData.val().matches(/^AY [0-9]{4}-[0-9]{4}$/)"
+        },
+        "semester": {
+          ".validate": "newData.val() === '1st Semester' || newData.val() === '2nd Semester' || newData.val() === 'Midyear / Summer'"
+        },
+        "encodedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "encodedById": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "encodedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "modifiedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "programId": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "programName": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "remarks": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "submittedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "approvedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "approvedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "approvedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "reviewNote": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "reviewedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "reviewedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "reviewedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "enrolledCount": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 100000"
+        },
+        "passedCount": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "failedCount": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "droppedCount": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "incCount": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "averageGrade": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5"
+        },
+        "passingRate": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
+        },
+        "status": {
+          ".validate": "newData.val() === 'Approved' || newData.val() === 'Pending Dean Approval' || newData.val() === 'Returned for Revision'"
+        },
+        "revision": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+        },
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "departments": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active'",
+      "$id": {
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('role').val() === 'VPAA'",
+        ".validate": "newData.hasChildren([\"id\",\"name\"])",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "programs": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active'",
+      "$id": {
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('role').val() === 'VPAA'",
+        ".validate": "newData.hasChildren([\"id\",\"name\",\"code\",\"department\"])",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "code": {
+          ".validate": "newData.isString() && newData.val().length <= 40 && newData.val().length > 0"
+        },
+        "department": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "subjects": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active'",
+      "$id": {
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('role').val() === 'VPAA'",
+        ".validate": "newData.hasChildren([\"id\",\"title\",\"code\",\"department\"])",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "title": {
+          ".validate": "newData.isString() && newData.val().length <= 250 && newData.val().length > 0"
+        },
+        "code": {
+          ".validate": "newData.isString() && newData.val().length <= 40 && newData.val().length > 0"
+        },
+        "department": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "programId": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "programName": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "auditLogs": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('role').val() === 'VPAA'",
+      ".write": false
+    },
+    "backups": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('role').val() === 'VPAA'",
+      "$id": {
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('role').val() === 'VPAA' && !data.exists() && newData.child('createdByUid').val() === auth.uid",
+        ".validate": "newData.hasChildren(['id','fileName','createdAt','createdByUid','checksum','rawContent']) && newData.child('rawContent').isString() && newData.child('rawContent').val().length <= 10485760",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "fileName": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "fileSize": {
+          ".validate": "newData.isString() && newData.val().length <= 30 && newData.val().length > 0"
+        },
+        "createdAt": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "type": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "status": {
+          ".validate": "newData.isString() && newData.val().length <= 30 && newData.val().length > 0"
+        },
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val().length <= 100 && newData.val().length > 0"
+        },
+        "createdByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "checksum": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "rawContent": {
+          ".validate": "newData.isString() && newData.val().length <= 10485760 && newData.val().length > 0"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "annualReports": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active'",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active'",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('role').val() === 'VPAA'",
+        ".validate": "newData.hasChildren([\"id\",\"createdByUid\",\"modifiedByUid\",\"updatedAt\",\"revision\",\"academicYear\",\"year1\",\"year2\",\"year3\",\"year4\",\"year5\",\"total\"]) && newData.child('modifiedByUid').val() === auth.uid && (data.exists() ? newData.child('createdByUid').val() === data.child('createdByUid').val() : newData.child('createdByUid').val() === auth.uid) && (!data.exists() || newData.child('academicYear').val() === data.child('academicYear').val()) && $id === newData.child('academicYear').val().replace(' ', '_').replace('-', '_') && newData.child('total').val() === newData.child('year1').val() + newData.child('year2').val() + newData.child('year3').val() + newData.child('year4').val() + newData.child('year5').val()",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "createdByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "modifiedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "revision": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+        },
+        "academicYear": {
+          ".validate": "newData.isString() && newData.val().matches(/^AY [0-9]{4}-[0-9]{4}$/)"
+        },
+        "year1": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "year2": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "year3": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "year4": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "year5": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "total": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500000"
+        },
+        "notes": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "students": {
+      ".indexOn": [
+        "department"
+      ],
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && query.orderByChild === 'department' && query.equalTo === root.child('access').child(auth.uid).child('department').val()))",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && data.child('department').val() === root.child('access').child(auth.uid).child('department').val()))",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || (root.child('access').child(auth.uid).child('role').val() === 'Deans' || (root.child('access').child(auth.uid).child('role').val() === 'Heads' && (!data.exists() || data.child('createdByUid').val() === auth.uid)))) && (data.exists() ? data.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA' : newData.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA') && newData.exists()",
+        ".validate": "newData.hasChildren([\"id\",\"createdByUid\",\"modifiedByUid\",\"updatedAt\",\"revision\",\"department\",\"departmentId\",\"academicYear\",\"studentNumber\",\"name\",\"yearLevel\",\"status\"]) && newData.child('modifiedByUid').val() === auth.uid && (data.exists() ? newData.child('createdByUid').val() === data.child('createdByUid').val() : newData.child('createdByUid').val() === auth.uid) && newData.child('department').val() === root.child('departments').child(newData.child('departmentId').val()).child('name').val() && (!data.exists() || newData.child('department').val() === data.child('department').val()) && newData.child('studentNumber').val().matches(/^[A-Z0-9_-]{1,40}$/) && $id === 'stu_' + newData.child('studentNumber').val() && (!newData.child('programId').exists() || newData.child('programId').val() === '' || root.child('programs').child(newData.child('programId').val()).child('department').val() === newData.child('department').val())",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "createdByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "modifiedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "revision": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+        },
+        "department": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "departmentId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "academicYear": {
+          ".validate": "newData.isString() && newData.val().matches(/^AY [0-9]{4}-[0-9]{4}$/)"
+        },
+        "studentNumber": {
+          ".validate": "newData.isString() && newData.val().length <= 40 && newData.val().length > 0"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 100 && newData.val().length > 0"
+        },
+        "programId": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "notes": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "yearLevel": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 5"
+        },
+        "status": {
+          ".validate": "newData.val() === 'Enrolled' || newData.val() === 'On Leave' || newData.val() === 'Withdrawn' || newData.val() === 'Graduated'"
+        },
+        "subjectIds": {
+          "$subjectId": {
+            ".validate": "newData.val() === true && root.child('subjects').child($subjectId).child('department').val() === newData.parent().parent().child('department').val() && (!newData.parent().parent().child('programId').exists() || newData.parent().parent().child('programId').val() === '' || !root.child('subjects').child($subjectId).child('programId').exists() || root.child('subjects').child($subjectId).child('programId').val() === '' || root.child('subjects').child($subjectId).child('programId').val() === newData.parent().parent().child('programId').val())"
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "sections": {
+      ".indexOn": [
+        "department"
+      ],
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || root.child('access').child(auth.uid).child('role').val() === 'President' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && query.orderByChild === 'department' && query.equalTo === root.child('access').child(auth.uid).child('department').val()))",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && ((root.child('access').child(auth.uid).child('role').val() === 'VPAA' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && data.child('department').val() === root.child('access').child(auth.uid).child('department').val())) || root.child('access').child(auth.uid).child('role').val() === 'President')",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || (root.child('access').child(auth.uid).child('role').val() === 'Deans' || (root.child('access').child(auth.uid).child('role').val() === 'Heads' && (!data.exists() || data.child('createdByUid').val() === auth.uid)))) && (data.exists() ? data.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA' : newData.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA') && newData.exists()",
+        ".validate": "newData.hasChildren([\"id\",\"createdByUid\",\"modifiedByUid\",\"updatedAt\",\"revision\",\"department\",\"departmentId\",\"academicYear\",\"name\",\"yearLevel\"]) && newData.child('modifiedByUid').val() === auth.uid && (data.exists() ? newData.child('createdByUid').val() === data.child('createdByUid').val() : newData.child('createdByUid').val() === auth.uid) && newData.child('department').val() === root.child('departments').child(newData.child('departmentId').val()).child('name').val() && (!data.exists() || newData.child('department').val() === data.child('department').val()) && (!data.exists() || newData.child('academicYear').val() === data.child('academicYear').val()) && (!data.exists() || newData.child('name').val() === data.child('name').val())",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "createdByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "modifiedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "revision": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+        },
+        "department": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "departmentId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "academicYear": {
+          ".validate": "newData.isString() && newData.val().matches(/^AY [0-9]{4}-[0-9]{4}$/)"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 60 && newData.val().length > 0"
+        },
+        "yearLevel": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 5"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "retention": {
+      ".indexOn": [
+        "department"
+      ],
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && query.orderByChild === 'department' && query.equalTo === root.child('access').child(auth.uid).child('department').val()))",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && data.child('department').val() === root.child('access').child(auth.uid).child('department').val()))",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || (root.child('access').child(auth.uid).child('role').val() === 'Deans' || (root.child('access').child(auth.uid).child('role').val() === 'Heads' && (!data.exists() || data.child('createdByUid').val() === auth.uid)))) && (data.exists() ? data.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA' : newData.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA')",
+        ".validate": "newData.hasChildren([\"id\",\"createdByUid\",\"modifiedByUid\",\"updatedAt\",\"revision\",\"department\",\"departmentId\",\"academicYear\",\"studentId\",\"sectionId\",\"movement\"]) && newData.child('modifiedByUid').val() === auth.uid && (data.exists() ? newData.child('createdByUid').val() === data.child('createdByUid').val() : newData.child('createdByUid').val() === auth.uid) && newData.child('department').val() === root.child('departments').child(newData.child('departmentId').val()).child('name').val() && (!data.exists() || newData.child('department').val() === data.child('department').val()) && (!data.exists() || newData.child('academicYear').val() === data.child('academicYear').val()) && $id === 'ret_' + newData.child('studentId').val() + '_' + newData.child('academicYear').val().replace(' ', '_').replace('-', '_') && root.child('students').child(newData.child('studentId').val()).child('department').val() === newData.child('department').val() && root.child('sections').child(newData.child('sectionId').val()).child('department').val() === newData.child('department').val() && root.child('sections').child(newData.child('sectionId').val()).child('academicYear').val() === newData.child('academicYear').val() && ((newData.child('movement').val() !== 'Shiftee' && newData.child('movement').val() !== 'Transferee') || (newData.child('destination').isString() && newData.child('destination').val().length > 0))",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "createdByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "modifiedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "revision": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+        },
+        "department": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "departmentId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "academicYear": {
+          ".validate": "newData.isString() && newData.val().matches(/^AY [0-9]{4}-[0-9]{4}$/)"
+        },
+        "studentId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "sectionId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "destination": {
+          ".validate": "newData.isString() && newData.val().length <= 160"
+        },
+        "notes": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "movement": {
+          ".validate": "newData.val() === 'Retained' || newData.val() === 'Shiftee' || newData.val() === 'Transferee' || newData.val() === 'Withdrawn' || newData.val() === 'Graduated'"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "faculty": {
+      ".indexOn": [
+        "department"
+      ],
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || root.child('access').child(auth.uid).child('role').val() === 'President' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && query.orderByChild === 'department' && query.equalTo === root.child('access').child(auth.uid).child('department').val()))",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && ((root.child('access').child(auth.uid).child('role').val() === 'VPAA' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && data.child('department').val() === root.child('access').child(auth.uid).child('department').val())) || root.child('access').child(auth.uid).child('role').val() === 'President')",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || (root.child('access').child(auth.uid).child('role').val() === 'Deans')) && (data.exists() ? data.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA' : newData.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA') && (newData.exists() || root.child('departmentHeads').child('dept_' + data.child('departmentId').val()).child('facultyId').val() !== $id)",
+        ".validate": "newData.hasChildren([\"id\",\"createdByUid\",\"modifiedByUid\",\"updatedAt\",\"revision\",\"department\",\"departmentId\",\"academicYear\",\"staffNumber\",\"name\",\"rating\"]) && newData.child('modifiedByUid').val() === auth.uid && (data.exists() ? newData.child('createdByUid').val() === data.child('createdByUid').val() : newData.child('createdByUid').val() === auth.uid) && newData.child('department').val() === root.child('departments').child(newData.child('departmentId').val()).child('name').val() && (!data.exists() || newData.child('department').val() === data.child('department').val()) && (!data.exists() || newData.child('academicYear').val() === data.child('academicYear').val()) && newData.child('staffNumber').val().matches(/^[A-Z0-9_-]{1,40}$/) && $id === 'fac_' + newData.child('staffNumber').val() + '_' + newData.child('academicYear').val().replace(' ', '_').replace('-', '_')",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "createdByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "modifiedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "revision": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+        },
+        "department": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "departmentId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "academicYear": {
+          ".validate": "newData.isString() && newData.val().matches(/^AY [0-9]{4}-[0-9]{4}$/)"
+        },
+        "staffNumber": {
+          ".validate": "newData.isString() && newData.val().length <= 40 && newData.val().length > 0"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 100 && newData.val().length > 0"
+        },
+        "notes": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "rating": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "departmentHeads": {
+      ".indexOn": [
+        "department"
+      ],
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || root.child('access').child(auth.uid).child('role').val() === 'President' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && query.orderByChild === 'department' && query.equalTo === root.child('access').child(auth.uid).child('department').val()))",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && ((root.child('access').child(auth.uid).child('role').val() === 'VPAA' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && data.child('department').val() === root.child('access').child(auth.uid).child('department').val())) || root.child('access').child(auth.uid).child('role').val() === 'President')",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || (root.child('access').child(auth.uid).child('role').val() === 'Deans')) && (data.exists() ? data.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA' : newData.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA')",
+        ".validate": "newData.hasChildren([\"id\",\"createdByUid\",\"modifiedByUid\",\"updatedAt\",\"revision\",\"department\",\"departmentId\",\"facultyId\"]) && newData.child('modifiedByUid').val() === auth.uid && (data.exists() ? newData.child('createdByUid').val() === data.child('createdByUid').val() : newData.child('createdByUid').val() === auth.uid) && newData.child('department').val() === root.child('departments').child(newData.child('departmentId').val()).child('name').val() && (!data.exists() || newData.child('department').val() === data.child('department').val()) && $id === 'dept_' + newData.child('departmentId').val() && root.child('faculty').child(newData.child('facultyId').val()).child('department').val() === newData.child('department').val()",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "createdByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "modifiedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "revision": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+        },
+        "department": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "departmentId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "facultyId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "achievements": {
+      ".indexOn": [
+        "department"
+      ],
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || root.child('access').child(auth.uid).child('role').val() === 'President' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && query.orderByChild === 'department' && query.equalTo === root.child('access').child(auth.uid).child('department').val()))",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && ((root.child('access').child(auth.uid).child('role').val() === 'VPAA' || ((root.child('access').child(auth.uid).child('role').val() === 'Deans' || root.child('access').child(auth.uid).child('role').val() === 'Heads') && data.child('department').val() === root.child('access').child(auth.uid).child('department').val())) || root.child('access').child(auth.uid).child('role').val() === 'President')",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && (root.child('access').child(auth.uid).child('role').val() === 'VPAA' || (root.child('access').child(auth.uid).child('role').val() === 'Deans' || (root.child('access').child(auth.uid).child('role').val() === 'Heads' && (!data.exists() || data.child('createdByUid').val() === auth.uid)))) && (data.exists() ? data.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA' : newData.child('department').val() === root.child('access').child(auth.uid).child('department').val() || root.child('access').child(auth.uid).child('role').val() === 'VPAA')",
+        ".validate": "newData.hasChildren([\"id\",\"createdByUid\",\"modifiedByUid\",\"updatedAt\",\"revision\",\"department\",\"departmentId\",\"academicYear\",\"title\"]) && newData.child('modifiedByUid').val() === auth.uid && (data.exists() ? newData.child('createdByUid').val() === data.child('createdByUid').val() : newData.child('createdByUid').val() === auth.uid) && newData.child('department').val() === root.child('departments').child(newData.child('departmentId').val()).child('name').val() && (!data.exists() || newData.child('department').val() === data.child('department').val()) && (!data.exists() || newData.child('academicYear').val() === data.child('academicYear').val())",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "createdByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "modifiedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "revision": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+        },
+        "department": {
+          ".validate": "newData.isString() && newData.val().length <= 160 && newData.val().length > 0"
+        },
+        "departmentId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "academicYear": {
+          ".validate": "newData.isString() && newData.val().matches(/^AY [0-9]{4}-[0-9]{4}$/)"
+        },
+        "title": {
+          ".validate": "newData.isString() && newData.val().length <= 180 && newData.val().length > 0"
+        },
+        "description": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "achievedOn": {
+          ".validate": "newData.isString() && newData.val().length <= 10"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "topcit": {
+      ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active'",
+      "$id": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active'",
+        ".write": "auth != null && root.child('access').child(auth.uid).child('status').val() === 'Active' && root.child('access').child(auth.uid).child('role').val() === 'VPAA'",
+        ".validate": "newData.hasChildren([\"id\",\"createdByUid\",\"modifiedByUid\",\"updatedAt\",\"revision\",\"academicYear\",\"level1\",\"level2\",\"level3\",\"level4\",\"level5\",\"total\"]) && newData.child('modifiedByUid').val() === auth.uid && (data.exists() ? newData.child('createdByUid').val() === data.child('createdByUid').val() : newData.child('createdByUid').val() === auth.uid) && (!data.exists() || newData.child('academicYear').val() === data.child('academicYear').val()) && $id === newData.child('academicYear').val().replace(' ', '_').replace('-', '_') && newData.child('total').val() === newData.child('level1').val() + newData.child('level2').val() + newData.child('level3').val() + newData.child('level4').val() + newData.child('level5').val()",
+        "id": {
+          ".validate": "newData.val() === $id"
+        },
+        "createdByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "modifiedByUid": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && newData.val().length > 0"
+        },
+        "updatedAt": {
+          ".validate": "newData.isString() && newData.val().length <= 50 && newData.val().length > 0"
+        },
+        "revision": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+        },
+        "academicYear": {
+          ".validate": "newData.isString() && newData.val().matches(/^AY [0-9]{4}-[0-9]{4}$/)"
+        },
+        "level1": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "level2": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "level3": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "level4": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "level5": {
+          ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 100000"
+        },
+        "total": {
+          ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 500000"
+        },
+        "notes": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}

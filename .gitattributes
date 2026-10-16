@@ -1,0 +1,18 @@
+* text=auto eol=lf
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.woff2 -text
+
+# GitHub source archives exclude local environments and private credentials.
+.env export-ignore
+.env.* export-ignore
+.env.example -export-ignore
+/.env.enc -export-ignore
+*.key export-ignore
+*.pem export-ignore
+*service-account*.json export-ignore
+*serviceAccount*.json export-ignore
+/.firebase export-ignore
+/deliverables/*.zip export-ignore
+.tmp-* export-ignore

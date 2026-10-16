@@ -1,0 +1,12 @@
+{
+  "client": { "permissions": { "disabledUserSignup": true, "disabledUserDeletion": true } },
+  "passwordPolicyConfig": {
+    "passwordPolicyEnforcementState": "ENFORCE", "forceUpgradeOnSignin": false,
+    "passwordPolicyVersions": [{ "customStrengthOptions": {
+      "minPasswordLength": 12, "maxPasswordLength": 128,
+      "containsLowercaseCharacter": true, "containsUppercaseCharacter": true,
+      "containsNumericCharacter": true, "containsNonAlphanumericCharacter": true
+    } }]
+  },
+  "emailPrivacyConfig": { "enableImprovedEmailPrivacy": true }
+}

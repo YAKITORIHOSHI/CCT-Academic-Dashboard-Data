@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useAuth } from '../context/AuthContext';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useAuth } from '../context/auth';
+import { useAcademicData } from '../context/academicData';
+import { firebaseErrorMessage } from '../services/firebaseSafety';
 import { CustomSelect } from '../components/common/CustomSelect';
 import { ConfirmDialog } from '../components/common/Feedback';
 import {
@@ -25,7 +27,7 @@ const Message = ({ value }) => {
   if (!value?.text) return null;
   const isError = value.type === 'error';
   return (
-    <div className={`flex items-start gap-2 rounded-xl border p-3 text-xs ${isError
+    <div className={`flex items-start gap-2 rounded-xl border p-3 text-sm ${isError
         ? 'border-rose-800 bg-rose-950/70 text-rose-200'
         : 'border-emerald-800 bg-emerald-950/70 text-emerald-200'
       }`}>
@@ -36,7 +38,7 @@ const Message = ({ value }) => {
 };
 
 const EmptyState = ({ children }) => (
-  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-xs text-slate-400 dark:border-slate-700">
+  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400 dark:border-slate-700">
     {children}
   </div>
 );
@@ -55,8 +57,11 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
     addSubjectToCatalog,
     deleteSubjectFromCatalog
   } = useAuth();
+  const academicData = useAcademicData();
 
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const [newDepartmentName, setNewDepartmentName] = useState('');
   const [departmentMessage, setDepartmentMessage] = useState(null);
@@ -153,68 +158,53 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
     return groups;
   }, {}), [displayedSubjects]);
 
-  const handleAddDepartment = (event) => {
-    event.preventDefault();
-    setDepartmentMessage(null);
-    const result = addDepartment(newDepartmentName);
-    if (!result?.success) {
-      setDepartmentMessage({ type: 'error', text: result?.message });
-      return;
-    }
-    setNewDepartmentName('');
-    setDepartmentMessage({ type: 'success', text: `Academic unit "${result.department}" was queued for database synchronization.` });
+  const runCatalogForm = async (setter, task, onSuccess) => {
+    if (savingRef.current) return;
+    savingRef.current = true; setIsSaving(true); setter(null);
+    try {
+      const result = await task();
+      if (!result?.success) { setter({ type: 'error', text: result?.message || 'The CCT change could not be completed.' }); return; }
+      setter({ type: 'success', text: onSuccess(result) });
+    } catch (error) {
+      setter({ type: 'error', text: firebaseErrorMessage(error, 'save') });
+    } finally { savingRef.current = false; setIsSaving(false); }
   };
-
-  const handleAddProgram = (event) => {
+  const handleAddDepartment = async (event) => {
     event.preventDefault();
-    setProgramMessage(null);
-    const result = addProgram({
-      code: newProgramCode,
-      name: newProgramName,
-      department: programDepartment
+    await runCatalogForm(setDepartmentMessage, () => addDepartment(newDepartmentName), (result) => {
+      setNewDepartmentName('');
+      return `Academic unit "${result.department}" was saved to Firebase.`;
     });
-    if (!result?.success) {
-      setProgramMessage({ type: 'error', text: result?.message });
-      return;
-    }
-    setNewProgramCode('');
-    setNewProgramName('');
-    setProgramMessage({ type: 'success', text: `Program "${result.program.name}" was added from the live database model.` });
   };
-
-  const handleAddSubject = (event) => {
+  const handleAddProgram = async (event) => {
     event.preventDefault();
-    setSubjectMessage(null);
-    const result = addSubjectToCatalog({
-      code: newSubjectCode,
-      title: newSubjectTitle,
-      department: subjectDepartment,
-      programId: subjectProgram === DEPARTMENT_WIDE ? '' : subjectProgram
+    await runCatalogForm(setProgramMessage, () => addProgram({ code: newProgramCode, name: newProgramName, department: programDepartment }), (result) => {
+      const message = `Program "${result.program.name}" was saved to Firebase.`;
+      setNewProgramCode(''); setNewProgramName(''); return message;
     });
-    if (!result?.success) {
-      setSubjectMessage({ type: 'error', text: result?.message });
-      return;
-    }
-    setNewSubjectCode('');
-    setNewSubjectTitle('');
-    setSubjectMessage({ type: 'success', text: `Subject ${result.subject.code} was added to ${result.subject.programName || 'the department-wide catalog'}.` });
+  };
+  const handleAddSubject = async (event) => {
+    event.preventDefault();
+    await runCatalogForm(setSubjectMessage, () => addSubjectToCatalog({ code: newSubjectCode, title: newSubjectTitle, department: subjectDepartment,
+      programId: subjectProgram === DEPARTMENT_WIDE ? '' : subjectProgram }), (result) => {
+      const message = `Subject ${result.subject.code} was saved to ${result.subject.programName || 'the department-wide catalog'}.`;
+      setNewSubjectCode(''); setNewSubjectTitle(''); return message;
+    });
   };
 
-  const confirmDelete = () => {
-    if (!pendingDelete) return;
-    let result;
-    if (pendingDelete.type === 'department') result = deleteDepartment(pendingDelete.name);
-    if (pendingDelete.type === 'program') result = deleteProgram(pendingDelete.id);
-    if (pendingDelete.type === 'subject') result = deleteSubjectFromCatalog(pendingDelete.id);
-
-    const setter = pendingDelete.type === 'department'
-      ? setDepartmentMessage
-      : pendingDelete.type === 'program'
-        ? setProgramMessage
-        : setSubjectMessage;
-    setter(result?.success
-      ? { type: 'success', text: `${pendingDelete.label} was removed from the active catalog.` }
-      : { type: 'error', text: result?.message || `${pendingDelete.label} could not be removed.` });
+  const confirmDelete = async () => {
+    if (!pendingDelete || savingRef.current) return;
+    const setter = pendingDelete.type === 'department' ? setDepartmentMessage : pendingDelete.type === 'program' ? setProgramMessage : setSubjectMessage;
+    await runCatalogForm(setter, async () => {
+      const referenced = pendingDelete.type === 'department'
+        ? ['students','sections','retention','faculty','departmentHeads','achievements'].some((collection) => academicData[collection].some((row) => row.department === pendingDelete.name))
+        : academicData.students.some((student) => pendingDelete.type === 'program' ? student.programId === pendingDelete.id : student.subjectIds?.[pendingDelete.id]);
+      if (academicData.sync.loading || academicData.sync.error) return { success: false, message: 'Wait for CCT academic data to synchronize before removing catalog entries.' };
+      if (referenced) return { success: false, message: 'This catalog entry is referenced by CCT student or academic data. Update those links before removing it.' };
+      if (pendingDelete.type === 'department') return await deleteDepartment(pendingDelete.name);
+      if (pendingDelete.type === 'program') return await deleteProgram(pendingDelete.id);
+      return await deleteSubjectFromCatalog(pendingDelete.id);
+    }, () => `${pendingDelete.label} was removed from the active catalog.`);
     setPendingDelete(null);
   };
 
@@ -225,31 +215,31 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
       : 'Remove subject?';
 
   const deleteMessage = pendingDelete?.type === 'department'
-    ? `Remove "${pendingDelete?.label || ''}" from the institutional directory? Removal is blocked while accounts, records, programs, or subjects reference it.`
+    ? `Remove "${pendingDelete?.label || ''}" from the CCT directory? Removal is blocked while accounts, records, programs, or subjects reference it.`
     : pendingDelete?.type === 'program'
       ? `Remove "${pendingDelete?.label || ''}" from the program directory? Linked subjects must be reassigned or removed first. Historical records remain intact.`
       : `Remove ${pendingDelete?.label || ''} from the subject catalog? Existing academic records remain unchanged.`;
 
   return (
     <div className="page-stack space-y-4 sm:space-y-6">
-      <section className="hero-panel hero-motion relative overflow-hidden rounded-3xl border border-sky-500/30 bg-gradient-to-br from-slate-950 via-blue-950 to-sky-950 p-5 text-white sm:p-6 lg:p-7 shadow-xl shadow-sky-950/40">
-        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-sky-500/25 blur-3xl" />
-        <div className="absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-blue-600/20 blur-3xl" />
+      <section className="hero-panel hero-motion relative overflow-hidden rounded-2xl border border-gold-500/30 bg-gradient-to-br from-slate-950 via-crimson-950 to-gold-950 p-5 text-white sm:p-6 lg:p-7 shadow-xl shadow-gold-950/40">
+        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-gold-500/25 blur-3xl" />
+        <div className="absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-crimson-600/20 blur-3xl" />
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-sky-400">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-normal text-gold-400">
               <Sliders className="h-4 w-4" />
-              Database-driven configuration
+              CCT Configuration
             </div>
-            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Institutional Unit</h1>
-            <p className="mt-2 max-w-3xl text-xs leading-relaxed text-sky-100/90 sm:text-sm">
-              Maintain the department → program → subject hierarchy directly in Firebase. The interface renders cached components first, then synchronizes database changes in the background.
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">CCT Directory</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-gold-100/90 sm:text-sm">
+              Keep academic units, programs, and subjects organized for consistent record encoding and reporting.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-blue-900/40 px-3 py-1.5 text-[10px] font-bold text-sky-200">
-                <Landmark className="h-3.5 w-3.5 text-sky-400" /> Units: {departments.length}
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold-400/30 bg-crimson-900/40 px-3 py-1.5 text-xs font-bold text-gold-200">
+                <Landmark className="h-3.5 w-3.5 text-gold-400" /> Units: {departments.length}
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-blue-900/40 px-3 py-1.5 text-[10px] font-bold text-sky-200">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold-400/30 bg-crimson-900/40 px-3 py-1.5 text-xs font-bold text-gold-200">
                 <BookOpen className="h-3.5 w-3.5 text-emerald-400" /> Subjects: {subjectCatalog.length}
               </span>
             </div>
@@ -259,7 +249,7 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
             <button
               type="button"
               onClick={() => setActiveTab('dashboard')}
-              className="glass-control control-lift min-h-11 rounded-xl border border-sky-400/30 bg-blue-950/40 px-4 text-xs font-bold text-sky-200 transition hover:bg-blue-900/60 cursor-pointer flex items-center justify-center gap-2"
+              className="glass-control control-lift min-h-11 rounded-xl border border-gold-400/30 bg-crimson-950/40 px-4 text-sm font-bold text-gold-200 transition hover:bg-crimson-900/60 cursor-pointer flex items-center justify-center gap-2"
             >
               <ArrowLeft className="h-4 w-4" />
               Return to Workspace
@@ -280,8 +270,8 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
               <div key={label} className="surface-panel rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
-                    <p className="mt-1 font-mono text-xl font-black text-slate-950 dark:text-white">{value}</p>
+                    <p className="text-xs font-semibold tracking-normal text-slate-500 dark:text-slate-400">{label}</p>
+                    <p className="mt-1 font-mono text-xl font-semibold text-slate-950 dark:text-white">{value}</p>
                   </div>
                   <span className="grid h-9 w-9 place-items-center rounded-xl bg-amber-500/10 text-amber-500"><Icon className="h-4 w-4" /></span>
                 </div>
@@ -292,50 +282,53 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
           <div className="grid gap-4 xl:grid-cols-2">
             <section className="surface-panel rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 sm:p-5">
               <div className="mb-4 flex items-center gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-500/10 text-violet-500"><Layers className="h-4 w-4" /></span>
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-crimson-500/10 text-crimson-500"><Layers className="h-4 w-4" /></span>
                 <div>
-                  <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">Academic units</h2>
-                  <p className="text-[10px] text-slate-500">Loaded from the Firebase departments collection</p>
+                  <h2 className="text-sm font-semibold tracking-normal text-slate-900 dark:text-white">Academic Units</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Schools and units used in academic records and account assignments</p>
                 </div>
               </div>
               <Message value={departmentMessage} />
-              <form onSubmit={handleAddDepartment} className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <form onSubmit={handleAddDepartment} className="mt-3 flex flex-col gap-4"><fieldset disabled={isSaving} className="contents">
+                <label htmlFor="unit-name" className="form-label mb-0">Academic Unit Name</label>
                 <input
+                  id="unit-name"
                   required
                   value={newDepartmentName}
                   onChange={(event) => setNewDepartmentName(event.target.value)}
                   placeholder="New school or academic unit"
                   className="form-control flex-1"
                 />
-                <button type="submit" className="primary-action inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-xs font-bold text-white hover:bg-violet-700">
-                  <Plus className="h-4 w-4" /> Add unit
+                <button type="submit" className="primary-action inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-crimson-600 px-4 text-sm font-bold text-white hover:bg-crimson-700">
+                  <Plus className="h-4 w-4" /> Add Unit
                 </button>
-              </form>
+              </fieldset></form>
               <div className="mt-4 space-y-2">
                 {departments.length ? departments.map((unit) => (
                   <div key={unit} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-950/60">
-                    <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
                       <Building className="h-4 w-4 shrink-0 text-amber-500" />
                       <span className="truncate">{unit}</span>
                     </div>
-                    <button type="button" onClick={() => setPendingDelete({ type: 'department', name: unit, label: unit })} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" aria-label={`Remove ${unit}`}>
+                    <button type="button" disabled={isSaving} onClick={() => setPendingDelete({ type: 'department', name: unit, label: unit })} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" aria-label={`Remove ${unit}`}>
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                )) : <EmptyState>No departments exist in Firebase yet.</EmptyState>}
+                )) : <EmptyState>Add your first academic unit to get started.</EmptyState>}
               </div>
             </section>
 
             <section className="surface-panel rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 sm:p-5">
               <div className="mb-4 flex items-center gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-sky-500/10 text-sky-500"><GraduationCap className="h-4 w-4" /></span>
+                <span className="grid h-9 w-9 place-items-center rounded-xl bg-gold-500/10 text-gold-500"><GraduationCap className="h-4 w-4" /></span>
                 <div>
-                  <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">Programs by academic unit</h2>
-                  <p className="text-[10px] text-slate-500">Every program is read from and maintained in the Firebase programs collection</p>
+                  <h2 className="text-sm font-semibold tracking-normal text-slate-900 dark:text-white">Programs by Academic Unit</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Organize the programs offered by each academic unit</p>
                 </div>
               </div>
               <Message value={programMessage} />
-              <form onSubmit={handleAddProgram} className="mt-3 space-y-2">
+              <form onSubmit={handleAddProgram} className="mt-3 space-y-2"><fieldset disabled={isSaving} className="contents">
+                <span className="form-label">Academic Unit</span>
                 <CustomSelect
                   value={programDepartment}
                   onChange={setProgramDepartment}
@@ -343,24 +336,24 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
                   ariaLabel="Program academic unit"
                   placeholder="Select academic unit"
                 />
-                <div className="grid gap-2 sm:grid-cols-[minmax(8rem,0.35fr)_minmax(0,1fr)]">
-                  <input value={newProgramCode} onChange={(event) => setNewProgramCode(event.target.value)} placeholder="Program code (optional)" className="form-control" />
-                  <input required value={newProgramName} onChange={(event) => setNewProgramName(event.target.value)} placeholder="Program name" className="form-control" />
+                <div className="grid grid-cols-1 gap-4">
+                  <label><span className="form-label">Program Code <span className="optional-label">(Optional)</span></span><input value={newProgramCode} onChange={(event) => setNewProgramCode(event.target.value)} placeholder="e.g. BSCS" className="form-control" /></label>
+                  <label><span className="form-label">Program Name</span><input required value={newProgramName} onChange={(event) => setNewProgramName(event.target.value)} placeholder="e.g. Bachelor of Science in Computer Science" className="form-control" /></label>
                 </div>
-                <button type="submit" disabled={!programDepartment} className="primary-action inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-xs font-bold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50">
-                  <Plus className="h-4 w-4" /> Add program
+                <button type="submit" disabled={!programDepartment} className="primary-action inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-gold-700 px-4 text-sm font-bold text-white hover:bg-gold-800 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Plus className="h-4 w-4" /> Add Program
                 </button>
-              </form>
+              </fieldset></form>
               <div className="mt-4 space-y-2">
                 {programsForProgramForm.length ? programsForProgramForm.map((program) => (
                   <div key={program.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-950/60">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        {program.code && <span className="rounded-md bg-sky-500/10 px-2 py-0.5 font-mono text-[10px] font-black text-sky-600 dark:text-sky-300">{program.code}</span>}
-                        <span className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">{program.name}</span>
+                        {program.code && <span className="rounded-md bg-gold-500/10 px-2 py-0.5 font-mono text-xs font-semibold text-gold-700 dark:text-gold-300">{program.code}</span>}
+                        <span className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">{program.name}</span>
                       </div>
                     </div>
-                    <button type="button" onClick={() => setPendingDelete({ type: 'program', id: program.id, label: program.name })} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" aria-label={`Remove ${program.name}`}>
+                    <button type="button" disabled={isSaving} onClick={() => setPendingDelete({ type: 'program', id: program.id, label: program.name })} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" aria-label={`Remove ${program.name}`}>
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -374,8 +367,8 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
               <div className="flex items-center gap-3">
                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-500/10 text-amber-500"><BookOpen className="h-5 w-5" /></span>
                 <div>
-                  <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">Institutional Subject Catalog</h2>
-                  <p className="text-[10px] text-slate-500">Subjects inherit their academic unit and optionally belong to one database program</p>
+                  <h2 className="text-sm font-semibold tracking-normal text-slate-900 dark:text-white">CCT Subject Catalog</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Subject codes and titles available for academic record encoding</p>
                 </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 lg:w-[34rem]">
@@ -406,8 +399,10 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
 
             <Message value={subjectMessage} />
 
-            <form onSubmit={handleAddSubject} className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50 sm:p-4">
-              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(13rem,1.2fr)_minmax(12rem,1fr)_minmax(9rem,0.55fr)_minmax(14rem,1.2fr)_auto]">
+            <form onSubmit={handleAddSubject} className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/50 sm:p-4"><fieldset disabled={isSaving} className="contents">
+              <div className="grid max-w-xl grid-cols-1 gap-4">
+                <div>
+                <span className="form-label">Academic Unit</span>
                 <CustomSelect
                   value={subjectDepartment}
                   onChange={setSubjectDepartment}
@@ -415,6 +410,9 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
                   ariaLabel="Subject academic unit"
                   placeholder="Select academic unit"
                 />
+                </div>
+                <div>
+                <span className="form-label">Program Scope <span className="optional-label">(Optional)</span></span>
                 <CustomSelect
                   value={subjectProgram}
                   onChange={setSubjectProgram}
@@ -424,34 +422,35 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
                   ]}
                   ariaLabel="Subject program"
                 />
-                <input required value={newSubjectCode} onChange={(event) => setNewSubjectCode(event.target.value)} placeholder="Subject code" className="form-control" />
-                <input required value={newSubjectTitle} onChange={(event) => setNewSubjectTitle(event.target.value)} placeholder="Subject title" className="form-control" />
-                <button type="submit" disabled={!subjectDepartment} className="primary-action inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 text-xs font-bold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">
-                  <Plus className="h-4 w-4" /> Add subject
+                </div>
+                <label><span className="form-label">Subject Code</span><input required value={newSubjectCode} onChange={(event) => setNewSubjectCode(event.target.value)} placeholder="e.g. CS101" className="form-control" /></label>
+                <label><span className="form-label">Subject Title</span><input required value={newSubjectTitle} onChange={(event) => setNewSubjectTitle(event.target.value)} placeholder="e.g. Introduction to Computing" className="form-control" /></label>
+                <button type="submit" disabled={!subjectDepartment} className="primary-action inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 text-sm font-bold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50">
+                  <Plus className="h-4 w-4" /> Add Subject
                 </button>
               </div>
-            </form>
+            </fieldset></form>
 
             <div className="mt-4 space-y-4">
               {Object.values(subjectGroups).length ? Object.entries(subjectGroups).map(([key, group]) => (
                 <section key={key} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
                   <div className="flex flex-col gap-1 bg-slate-100 px-4 py-3 dark:bg-slate-800/70 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-black text-slate-900 dark:text-white">{group.programName}</p>
-                      <p className="truncate text-[10px] text-slate-500 dark:text-slate-400">{group.department}</p>
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{group.programName}</p>
+                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">{group.department}</p>
                     </div>
-                    <span className="text-[10px] font-bold text-slate-400">{group.subjects.length} subject{group.subjects.length === 1 ? '' : 's'}</span>
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{group.subjects.length} subject{group.subjects.length === 1 ? '' : 's'}</span>
                   </div>
                   <div className="divide-y divide-slate-100 dark:divide-slate-800">
                     {group.subjects.map((subject) => (
                       <div key={subject.id} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-950/40">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] font-black text-amber-700 dark:text-amber-300">{subject.code}</span>
-                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">{subject.title}</span>
+                            <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 font-mono text-xs font-semibold text-amber-700 dark:text-amber-300">{subject.code}</span>
+                            <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{subject.title}</span>
                           </div>
                         </div>
-                        <button type="button" onClick={() => setPendingDelete({ type: 'subject', id: subject.id, label: `${subject.code} — ${subject.title}` })} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" aria-label={`Remove ${subject.code}`}>
+                        <button type="button" disabled={isSaving} onClick={() => setPendingDelete({ type: 'subject', id: subject.id, label: `${subject.code} — ${subject.title}` })} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40" aria-label={`Remove ${subject.code}`}>
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
@@ -464,7 +463,7 @@ export const InstitutionalUnitPage = ({ setActiveTab }) => {
         </section>
       )}
 
-      <ConfirmDialog open={Boolean(pendingDelete)} title={deleteTitle} message={deleteMessage} confirmLabel="Remove" onConfirm={confirmDelete} onCancel={() => setPendingDelete(null)} />
+      <ConfirmDialog open={Boolean(pendingDelete)} title={deleteTitle} message={deleteMessage} confirmLabel="Remove" busy={isSaving} onConfirm={confirmDelete} onCancel={() => !isSaving && setPendingDelete(null)} />
     </div>
   );
 };

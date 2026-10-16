@@ -4,16 +4,16 @@ This round of changes focuses on functionality, security, and component responsi
 
 ## Security
 
-- **No hardcoded service credentials.** `src/firebase/config.js` now reads every value from build-time environment variables and logs which `VITE_FIREBASE_*` variables are missing instead of falling back to committed keys.
-- **Avatar URL sanitization.** All avatar URLs sourced from the Realtime Database or localStorage are validated against a strict `https://` pattern (`sanitizeAvatarUrl` in `AuthContext`) before reaching `<img>` elements, update flows, or cache writes. Tampered database values cannot inject other URL schemes.
-- **Env template completeness.** `.env.example` documents all required Firebase variables plus optional `VITE_DEV_HTTPS` and the Supabase profile-picture values.
+- **Pinned Firebase project.** The public SDK configuration uses academicdashboarddata as required by the user. Environment variables cannot switch projects; server credentials and private keys remain outside source and release archives.
+- **Initials-based accounts.** Accounts use initials; profile-picture integrations and uploads are removed.
+- **Environment backups.** .env.example documents public Firebase values and local flags. Only the authenticated encrypted .env.enc backup may be published; its private key stays outside the repository.
 
 ## Functionality
 
 - Cleaned all unused imports, unused catch parameters, and stale hook dependencies across pages, layout components, `CustomSelect`, and `AuthContext`.
-- `SettingsPage` preference helpers moved to module scope with per-user keys (mirrors `App.jsx`), removing unstable callback dependencies.
+- Shared preference helpers scope saved settings by Firebase project and user.
 - The 5-minute inactivity timeout constant is hoisted to module scope in `AuthContext`.
-- Removed dead `App.css` (30 KB, never imported; contained unlayered global rules that would have broken page headings if ever included).
+- Removed the unused App.css stylesheet, preserving the upstream cleanup.
 
 ## Responsiveness & touch
 

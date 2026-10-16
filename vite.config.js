@@ -17,27 +17,27 @@ export default defineConfig(({ mode }) => {
       target: 'es2020',
       sourcemap: false,
       chunkSizeWarningLimit: 1000,
-      rollupOptions: {
+      rolldownOptions: {
         output: {
-          manualChunks(id) {
-            if (!id.includes('node_modules')) return undefined
-            if (id.includes('firebase')) return 'vendor-firebase'
-            if (id.includes('recharts')) return 'vendor-recharts'
-            if (id.includes('lucide-react')) return 'vendor-icons'
-            if (id.includes('react')) return 'vendor-react'
-            return undefined
+          codeSplitting: {
+            groups: [
+              { name: 'vendor-firebase', test: /node_modules[\\/](?:@firebase|firebase)[\\/]/, priority: 40 },
+              { name: 'vendor-icons', test: /node_modules[\\/]lucide-react[\\/]/, priority: 30 },
+              { name: 'vendor-react', test: /node_modules[\\/](?:react|react-dom|scheduler)[\\/]/, priority: 20 },
+              { name: 'vendor-recharts', test: /node_modules[\\/]recharts[\\/]/, priority: 10 },
+            ],
           },
         },
       },
     },
     server: {
-      host: '0.0.0.0',
+      host: env.VITE_DEV_HOST || '127.0.0.1',
       port: 5173,
       strictPort: true,
       https: useLocalHttps,
     },
     preview: {
-      host: '0.0.0.0',
+      host: env.VITE_DEV_HOST || '127.0.0.1',
       port: 4173,
       strictPort: true,
     },

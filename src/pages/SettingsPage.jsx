@@ -1,5 +1,7 @@
+import { readPreference, writePreference } from '../services/userPreferences';
+import { ThemeSelect } from '../components/common/ThemeSelect';
 import React, { useCallback, useEffect, useState } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/auth';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -7,35 +9,14 @@ import {
   Globe,
   Monitor,
   Moon,
-  ShieldCheck,
   Sun,
+  ShieldCheck,
   Wifi,
   WifiOff,
   Zap,
   Settings,
   Type
 } from 'lucide-react';
-
-/**
- * Build a per-user localStorage key so preferences stay isolated between
- * accounts sharing the same browser (mirrors the App.jsx convention).
- */
-const userPrefKey = (userId, key) => userId ? `cct_u_${userId}_${key}` : `cct_${key}`;
-
-const readPref = (userId, key, fallback) => {
-  try {
-    const value = localStorage.getItem(userPrefKey(userId, key));
-    return value !== null ? value : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const writePref = (userId, key, value) => {
-  try {
-    localStorage.setItem(userPrefKey(userId, key), value);
-  } catch { /* non-critical */ }
-};
 
 const StatusDot = ({ status }) => {
   const colors = {
@@ -56,16 +37,16 @@ const StatusRow = ({ icon: Icon, label, value, status = 'idle', detail }) => (
         <Icon className="h-4 w-4" />
       </span>
       <div className="min-w-0">
-        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">{label}</p>
-        {detail && <p className="truncate text-[10px] text-slate-400">{detail}</p>}
+        <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</p>
+        {detail && <p className="truncate text-xs text-slate-500 dark:text-slate-400">{detail}</p>}
       </div>
     </div>
     <div className="flex shrink-0 items-center gap-2">
-      <span className={`text-xs font-bold ${
+      <span className={`text-sm font-bold ${
         status === 'healthy' ? 'text-emerald-500' :
         status === 'warning' ? 'text-amber-500' :
         status === 'error' ? 'text-rose-500' :
-        'text-slate-400'
+        'text-slate-500 dark:text-slate-400'
       }`}>{value}</span>
       <StatusDot status={status} />
     </div>
@@ -79,7 +60,7 @@ const ToggleSwitch = ({ checked, onChange, id }) => (
     type="button"
     aria-checked={checked}
     onClick={() => onChange(!checked)}
-    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900 ${
+    className={`neu-toggle relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900 ${
       checked ? 'bg-gradient-to-r from-rose-800 to-amber-600' : 'bg-slate-300 dark:bg-slate-700'
     }`}
   >
@@ -98,15 +79,15 @@ const PreferenceRow = ({ icon: Icon, label, description, checked, onChange, id }
         <Icon className="h-4 w-4" />
       </span>
       <div className="min-w-0">
-        <label htmlFor={id} className="cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-200">{label}</label>
-        {description && <p className="text-[10px] text-slate-400">{description}</p>}
+        <label htmlFor={id} className="cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200">{label}</label>
+        {description && <p className="text-xs text-slate-500 dark:text-slate-400">{description}</p>}
       </div>
     </div>
     <ToggleSwitch id={id} checked={checked} onChange={onChange} />
   </div>
 );
 
-export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
+export const SettingsPage = ({ setActiveTab, isDarkMode, theme, setTheme }) => {
   const { isFirebaseConnected, dataSync, isAuthenticated, currentUser } = useAuth();
 
   // Internet connection state
@@ -114,8 +95,12 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
   const [connectionType, setConnectionType] = useState('');
   const [connectionLatency, setConnectionLatency] = useState(null);
 
-  // Preferences — initialized with defaults, loaded per-user below
+  // Per-user preference key helper
   const userId = currentUser?.id || '';
+  const readPref = useCallback((key, fallback) => readPreference(userId, key, fallback), [userId]);
+  const writePref = useCallback((key, value) => writePreference(userId, key, value), [userId]);
+
+  // Preferences — initialized with defaults, loaded per-user below
   const [hardwareAcceleration, setHardwareAcceleration] = useState(true);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [fontFamily, setFontFamily] = useState('system');
@@ -123,10 +108,10 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
   // Load per-user preferences when user changes
   useEffect(() => {
     if (!userId) return;
-    setHardwareAcceleration(readPref(userId, 'hw_accel', 'true') !== 'false');
-    setReduceMotion(readPref(userId, 'reduce_motion', 'false') === 'true');
-    setFontFamily(readPref(userId, 'font', 'system'));
-  }, [userId]);
+    setHardwareAcceleration(readPref('hw_accel', 'true') !== 'false');
+    setReduceMotion(readPref('reduce_motion', 'false') === 'true');
+    setFontFamily(readPref('font', 'system'));
+  }, [userId, readPref]);
 
   // Monitor online/offline status
   useEffect(() => {
@@ -158,25 +143,25 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
   // Hardware acceleration toggle
   const handleHardwareAcceleration = useCallback((enabled) => {
     setHardwareAcceleration(enabled);
-    writePref(userId, 'hw_accel', String(enabled));
+    writePref('hw_accel', String(enabled));
     document.documentElement.classList.toggle('no-hw-accel', !enabled);
-  }, [userId]);
+  }, [writePref]);
 
   // Reduce motion toggle
   const handleReduceMotion = useCallback((enabled) => {
     setReduceMotion(enabled);
-    writePref(userId, 'reduce_motion', String(enabled));
+    writePref('reduce_motion', String(enabled));
     document.documentElement.classList.toggle('reduce-motion', enabled);
-  }, [userId]);
+  }, [writePref]);
 
   // Font family change handler
   const handleFontFamilyChange = useCallback((selectedFont) => {
     setFontFamily(selectedFont);
-    writePref(userId, 'font', selectedFont);
+    writePref('font', selectedFont);
     document.documentElement.classList.remove('font-montserrat', 'font-oswald');
     if (selectedFont === 'montserrat') document.documentElement.classList.add('font-montserrat');
     else if (selectedFont === 'oswald') document.documentElement.classList.add('font-oswald');
-  }, [userId]);
+  }, [writePref]);
 
   // Apply preferences to DOM whenever they change
   useEffect(() => {
@@ -213,24 +198,24 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
   return (
     <div className="page-stack space-y-4 sm:space-y-6">
       {/* Hero panel */}
-      <section className="hero-panel hero-motion relative overflow-hidden rounded-3xl border border-sky-500/30 bg-gradient-to-br from-slate-950 via-blue-950 to-sky-950 p-5 text-white sm:p-6 lg:p-7 shadow-xl shadow-sky-950/40">
-        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-sky-500/25 blur-3xl" />
-        <div className="absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-blue-600/20 blur-3xl" />
+      <section className="hero-panel hero-motion relative overflow-hidden rounded-2xl border border-gold-500/30 bg-gradient-to-br from-slate-950 via-crimson-950 to-gold-950 p-5 text-white sm:p-6 lg:p-7 shadow-xl shadow-gold-950/40">
+        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-gold-500/25 blur-3xl" />
+        <div className="absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-crimson-600/20 blur-3xl" />
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-sky-400">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-normal text-gold-400">
               <Settings className="h-4 w-4" />
-              Web application configuration
+              Application Configuration
             </div>
-            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Settings</h1>
-            <p className="mt-2 max-w-3xl text-xs leading-relaxed text-sky-100/90 sm:text-sm">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">CCT Preferences</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-gold-100/90 sm:text-sm">
               Monitor system health, connection stability, and manage display preferences. Changes are saved locally and applied immediately.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-blue-900/40 px-3 py-1.5 text-[10px] font-bold text-sky-200">
-                <ShieldCheck className="h-3.5 w-3.5 text-sky-400" /> {currentUser?.role}
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold-400/30 bg-crimson-900/40 px-3 py-1.5 text-xs font-bold text-gold-200">
+                <ShieldCheck className="h-3.5 w-3.5 text-gold-400" /> {currentUser?.role}
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-400/30 bg-blue-900/40 px-3 py-1.5 text-[10px] font-bold text-sky-200">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold-400/30 bg-crimson-900/40 px-3 py-1.5 text-xs font-bold text-gold-200">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Realtime Sync: {isFirebaseConnected ? 'Connected' : 'Offline'}
               </span>
             </div>
@@ -240,7 +225,7 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
             <button
               type="button"
               onClick={() => setActiveTab()}
-              className="glass-control control-lift min-h-11 rounded-xl border border-sky-400/30 bg-blue-950/40 px-4 text-xs font-bold text-sky-200 transition hover:bg-blue-900/60 cursor-pointer flex items-center justify-center gap-2"
+              className="glass-control control-lift min-h-11 rounded-xl border border-gold-400/30 bg-crimson-950/40 px-4 text-sm font-bold text-gold-200 transition hover:bg-crimson-900/60 cursor-pointer flex items-center justify-center gap-2"
             >
               <ArrowLeft className="h-4 w-4" />
               Return to Workspace
@@ -250,7 +235,7 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
       </section>
 
       {/* System status overview */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           {
             label: 'Database',
@@ -282,14 +267,14 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
               card.status === 'healthy' ? 'bg-emerald-500/10 text-emerald-500'
               : card.status === 'warning' ? 'bg-amber-500/10 text-amber-500'
               : card.status === 'error' ? 'bg-rose-500/10 text-rose-500'
-              : 'bg-slate-100 text-slate-400 dark:bg-slate-800'
+              : 'bg-slate-100 text-slate-500 dark:text-slate-400 dark:bg-slate-800'
             }`}>
               <card.icon className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">{card.label}</p>
+              <p className="text-xs font-semibold tracking-normal text-slate-500 dark:text-slate-400">{card.label}</p>
               <div className="mt-0.5 flex items-center gap-2">
-                <p className="text-sm font-black text-slate-950 dark:text-white">{card.value}</p>
+                <p className="text-sm font-semibold text-slate-950 dark:text-white">{card.value}</p>
                 <StatusDot status={card.status} />
               </div>
             </div>
@@ -297,16 +282,16 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Connection & infrastructure */}
         <section className="surface-panel rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 sm:p-5">
           <div className="mb-4 flex items-center gap-3 border-b border-slate-100 pb-3 dark:border-slate-800">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-sky-500/10 text-sky-500">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-gold-500/10 text-gold-500">
               <Globe className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">Connection & Infrastructure</h2>
-              <p className="text-[10px] text-slate-500">Real-time system connectivity status</p>
+              <h2 className="text-sm font-semibold tracking-normal text-slate-900 dark:text-white">Connection & Infrastructure</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Real-time system connectivity status</p>
             </div>
           </div>
 
@@ -349,20 +334,16 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
               <Monitor className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">Display & Performance</h2>
-              <p className="text-[10px] text-slate-500">Visual preferences and rendering options</p>
+              <h2 className="text-sm font-semibold tracking-normal text-slate-900 dark:text-white">Display & Performance</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Visual preferences and rendering options</p>
             </div>
           </div>
 
           <div className="space-y-2">
-            <PreferenceRow
-              id="toggle-dark-mode"
-              icon={isDarkMode ? Moon : Sun}
-              label={isDarkMode ? 'Dark Mode' : 'Light Mode'}
-              description="Switch between light and dark appearance"
-              checked={isDarkMode}
-              onChange={setIsDarkMode}
-            />
+            <div className="appearance-row inset-panel rounded-xl" role="group" aria-labelledby="appearance-label" aria-description="Light is the default. Use System Settings follows your device automatically.">
+              <p id="appearance-label" className="form-label">Appearance</p>
+              <ThemeSelect value={theme} onChange={setTheme} compact />
+            </div>
             <PreferenceRow
               id="toggle-hw-accel"
               icon={Zap}
@@ -387,8 +368,8 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
                   <Type className="h-4 w-4" />
                 </span>
                 <div className="min-w-0">
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Typography Font</span>
-                  <p className="text-[10px] text-slate-400">Select application-wide typeface family</p>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Typography Font</span>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Select application-wide typeface family</p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
@@ -403,7 +384,7 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
                       key={font.id}
                       type="button"
                       onClick={() => handleFontFamilyChange(font.id)}
-                      className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                      className={`cursor-pointer rounded-lg px-3 py-1.5 text-sm font-bold transition ${
                         font.style
                       } ${
                         active
@@ -425,16 +406,16 @@ export const SettingsPage = ({ setActiveTab, isDarkMode, setIsDarkMode }) => {
               <span className={`grid h-7 w-7 place-items-center rounded-lg ${isDarkMode ? 'bg-slate-800 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
                 {isDarkMode ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
               </span>
-              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
                 {isDarkMode ? 'Dark' : 'Light'} theme active
               </span>
             </div>
-            <span className="text-[10px] text-slate-400">•</span>
-            <span className="text-[10px] text-slate-400">
+            <span className="text-xs text-slate-500 dark:text-slate-400">•</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
               {hardwareAcceleration ? 'GPU rendering' : 'Software rendering'}
             </span>
-            <span className="text-[10px] text-slate-400">•</span>
-            <span className="text-[10px] font-bold text-slate-500 dark:text-slate-300">
+            <span className="text-xs text-slate-500 dark:text-slate-400">•</span>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-300">
               Font: {fontFamily === 'montserrat' ? 'Montserrat' : fontFamily === 'oswald' ? 'Oswald' : 'System Sans'}
             </span>
           </div>

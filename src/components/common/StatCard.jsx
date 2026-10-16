@@ -2,10 +2,10 @@ import React from 'react';
 
 const TONES = {
   blue: {
-    accent: 'from-blue-500 to-indigo-600',
-    glow: 'bg-blue-500/10 dark:bg-blue-400/10',
-    icon: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/70 dark:text-blue-300',
-    value: 'text-blue-700 dark:text-blue-300'
+    accent: 'from-crimson-500 to-crimson-600',
+    glow: 'bg-crimson-500/10 dark:bg-crimson-400/10',
+    icon: 'border-crimson-200 bg-crimson-50 text-crimson-700 dark:border-crimson-900/70 dark:bg-crimson-950/70 dark:text-crimson-300',
+    value: 'text-crimson-700 dark:text-crimson-300'
   },
   emerald: {
     accent: 'from-emerald-500 to-teal-600',
@@ -14,10 +14,10 @@ const TONES = {
     value: 'text-emerald-700 dark:text-emerald-300'
   },
   violet: {
-    accent: 'from-violet-500 to-indigo-600',
-    glow: 'bg-violet-500/10 dark:bg-violet-400/10',
-    icon: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/70 dark:bg-violet-950/70 dark:text-violet-300',
-    value: 'text-violet-700 dark:text-violet-300'
+    accent: 'from-gold-500 to-crimson-600',
+    glow: 'bg-gold-500/10 dark:bg-gold-400/10',
+    icon: 'border-gold-200 bg-gold-50 text-gold-700 dark:border-gold-900/70 dark:bg-gold-950/70 dark:text-gold-300',
+    value: 'text-gold-700 dark:text-gold-300'
   },
   amber: {
     accent: 'from-amber-400 to-orange-600',
@@ -37,11 +37,11 @@ export const StatCard = ({ title, value, subtitle, icon: Icon, color = 'blue', t
 
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{title}</p>
+          <p className="text-xs font-semibold tracking-normal text-slate-500 dark:text-slate-400">{title}</p>
           <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className={`font-mono text-2xl font-black tracking-tight sm:text-[1.7rem] ${tone.value}`}>{value}</span>
+            <span className={`metric-value tabular-nums text-2xl font-semibold tracking-tight sm:text-[1.7rem] ${tone.value}`}>{value}</span>
             {trend && (
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${trend.startsWith('+') ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300'}`}>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${trend.startsWith('+') ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300'}`}>
                 {trend}
               </span>
             )}
@@ -49,13 +49,13 @@ export const StatCard = ({ title, value, subtitle, icon: Icon, color = 'blue', t
         </div>
 
         {Icon && (
-          <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border shadow-sm transition duration-300 group-hover:-translate-y-0.5 group-hover:scale-105 ${tone.icon}`}>
+          <span className={`metric-icon grid h-11 w-11 shrink-0 place-items-center rounded-xl border shadow-sm transition duration-300 group-hover:-translate-y-0.5 group-hover:scale-105 ${tone.icon}`}>
             <Icon className="h-5 w-5" />
           </span>
         )}
       </div>
 
-      {subtitle && <p className="relative mt-2.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">{subtitle}</p>}
+      {subtitle && <p className="relative mt-2.5 text-xs leading-relaxed text-slate-500 dark:text-slate-400">{subtitle}</p>}
     </article>
   );
 };

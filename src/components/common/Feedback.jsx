@@ -20,9 +20,9 @@ const toastStyles = {
     iconClass: 'text-amber-600 dark:text-amber-400'
   },
   info: {
-    shell: 'border-indigo-300 bg-indigo-50 text-indigo-950 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-100',
+    shell: 'border-crimson-300 bg-crimson-50 text-crimson-950 dark:border-crimson-800 dark:bg-crimson-950 dark:text-crimson-100',
     icon: Info,
-    iconClass: 'text-indigo-600 dark:text-indigo-400'
+    iconClass: 'text-crimson-600 dark:text-crimson-400'
   }
 };
 
@@ -49,7 +49,7 @@ export const Toast = ({ message, type = 'info', onClose, duration = 4500 }) => {
         className={`pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-2xl border p-3.5 shadow-2xl ${style.shell}`}
       >
         <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${style.iconClass}`} />
-        <p className="min-w-0 flex-1 whitespace-pre-line text-xs font-semibold leading-relaxed">{message}</p>
+        <p className="min-w-0 flex-1 whitespace-pre-line text-sm font-semibold leading-relaxed">{message}</p>
         <button
           type="button"
           onClick={onClose}
@@ -84,7 +84,7 @@ export const ConfirmDialog = ({
       onClose={busy ? undefined : onCancel}
       closeOnBackdrop={!busy}
       ariaLabelledBy={titleId}
-      className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:p-6"
+      className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900 sm:p-6"
       zIndex={150}
     >
       <div className="flex items-start gap-3">
@@ -92,8 +92,8 @@ export const ConfirmDialog = ({
           <AlertTriangle className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 id={titleId} className="text-base font-black text-slate-950 dark:text-white">{title}</h2>
-          <p className="mt-1.5 whitespace-pre-line text-xs leading-relaxed text-slate-600 dark:text-slate-300">{message}</p>
+          <h2 id={titleId} className="text-base font-semibold text-slate-950 dark:text-white">{title}</h2>
+          <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-slate-600 dark:text-slate-300">{message}</p>
         </div>
       </div>
       <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -101,7 +101,7 @@ export const ConfirmDialog = ({
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="control-lift min-h-11 rounded-xl bg-slate-100 px-4 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200"
+          className="control-lift min-h-11 rounded-xl bg-slate-100 px-4 text-sm font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200"
         >
           {cancelLabel}
         </button>
@@ -109,7 +109,7 @@ export const ConfirmDialog = ({
           type="button"
           onClick={onConfirm}
           disabled={busy}
-          className={`primary-action min-h-11 rounded-xl px-5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-60 ${isDanger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+          className={`primary-action min-h-11 rounded-xl px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60 ${isDanger ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700'}`}
         >
           {busy ? 'Working…' : confirmLabel}
         </button>

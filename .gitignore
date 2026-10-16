@@ -13,6 +13,15 @@ dist-ssr
 *.local
 .env
 .env.*
+!.env.example
+# Only this authenticated, encrypted bundle may be published.
+!/.env.enc
+
+# Decryption keys and private credentials never belong in a release.
+*.key
+*.pem
+*service-account*.json
+*serviceAccount*.json
 
 # Editor directories and files
 .vscode/*
@@ -28,4 +37,9 @@ dist-ssr
 # Database dumps
 current-fdbs.json
 *-fdbs.json
+
+# Local Firebase tooling cache and generated source archives
+.firebase/
+deliverables/*.zip
+.tmp-*
 

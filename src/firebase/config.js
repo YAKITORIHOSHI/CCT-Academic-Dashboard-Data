@@ -1,47 +1,39 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
+import { getAuth, initializeAuth, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
+import { getFunctions } from 'firebase/functions';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
+import { getAnalytics, isSupported } from 'firebase/analytics';
+import { initializeFirebaseServices, initializeFirebaseAnalytics } from '../services/firebaseSafety';
 
-// Natsuki College of Imus Firebase configuration.
-// Values are injected at build time from .env.local — never hardcode them here.
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || ''
-};
+// User-selected public SDK configuration. Environment flags cannot switch projects.
+const firebaseConfig = Object.freeze({
+  apiKey: "AIzaSyABXspXcQOGHxVCHTM5IdNp6XIazui1CVk",
+  authDomain: "academicdashboarddata.firebaseapp.com",
+  databaseURL: "https://academicdashboarddata-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "academicdashboarddata",
+  storageBucket: "academicdashboarddata.firebasestorage.app",
+  messagingSenderId: "220617074534",
+  appId: "1:220617074534:web:db3aa2fcd106ef72e8caa7",
+  measurementId: "G-3VR70C544M"
+});
 
-const missingFirebaseVars = Object.entries(firebaseConfig)
-  .filter(([, value]) => !value)
-  .map(([key]) => `VITE_FIREBASE_${key.replace(/([A-Z])/g, '_$1').toUpperCase()}`);
-if (missingFirebaseVars.length > 0) {
-  console.warn(
-    `Firebase configuration is incomplete. Copy .env.example to .env.local and provide: ${missingFirebaseVars.join(', ')}`
-  );
-}
+const KEEP_SIGNED_IN_KEY = `${firebaseConfig.projectId}:cct_keep_signed_in`;
 
-const KEEP_SIGNED_IN_KEY = 'cct_keep_signed_in';
-
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-
-let auth;
-try {
-  auth = getAuth(app);
-} catch {
-  try {
-    const userWantsToStaySignedIn = typeof window !== 'undefined' && localStorage.getItem(KEEP_SIGNED_IN_KEY) === 'true';
-    auth = initializeAuth(app, {
-      persistence: userWantsToStaySignedIn ? browserLocalPersistence : inMemoryPersistence
-    });
-  } catch {
-    auth = getAuth(app);
-  }
-}
-
-const rtdb = getDatabase(app);
+let keepSignedIn = false;
+try { keepSignedIn = localStorage.getItem(KEEP_SIGNED_IN_KEY) === 'true'; } catch { /* Optional preference. */ }
+const { app, auth, rtdb, functions, initializationError: firebaseInitializationError } = initializeFirebaseServices(firebaseConfig, {
+  initializeApp, getApps, getApp, initializeAuth, getAuth, browserLocalPersistence, browserSessionPersistence,
+  getDatabase, getFunctions, initializeAppCheck, ReCaptchaEnterpriseProvider
+}, { keepSignedIn, appCheckSiteKey: import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY || '' });
+if (firebaseInitializationError) console.error('CCT Firebase initialization failed.', { code: firebaseInitializationError?.code || 'firebase/initialization-failed' });
+const isCctAdminServiceEnabled = import.meta.env.VITE_CCT_SERVER_FUNCTIONS_ENABLED === 'true';
 const isFirebaseInitialized = Boolean(app && auth && rtdb);
+// Analytics support varies by browser; it must not block authentication/data access.
+let analytics = null;
+const analyticsReady = initializeFirebaseAnalytics(app, { getAnalytics, isSupported }).then(instance => {
+  analytics = instance;
+  return instance;
+});
 
-export { app, auth, rtdb, firebaseConfig, isFirebaseInitialized, KEEP_SIGNED_IN_KEY };
+export { app, auth, rtdb, functions, analytics, analyticsReady, firebaseConfig, isFirebaseInitialized, firebaseInitializationError, isCctAdminServiceEnabled, KEEP_SIGNED_IN_KEY };

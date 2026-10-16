@@ -1,19 +1,21 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { initializeApp, deleteApp } from 'firebase/app';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AuthContext } from './auth';
+import { httpsCallable } from 'firebase/functions';
 import { RECORD_STATUS, normalizeAcademicYear } from '../utils/academic';
+import { MODULE_COLLECTIONS } from '../utils/academicModules';
+import { createCacheScope, createCollectionCache, pruneCollectionCache, removeLegacyCollectionCache } from '../services/collectionCache';
+import { runRecordTransaction } from '../services/recordTransactions';
+import { firebaseCollectionRows, firebaseErrorMessage, firebaseOperationResult, subscribeSafely, withFirebaseReadDeadline } from '../services/firebaseSafety';
 import { scheduleBackgroundTask } from '../services/backgroundTask';
 import { normalizeSnapshotInBackground } from '../services/backgroundDataWorker';
-import { auth, rtdb, firebaseConfig, isFirebaseInitialized, KEEP_SIGNED_IN_KEY } from '../firebase/config';
+import { auth, rtdb, functions, firebaseConfig, isFirebaseInitialized, isCctAdminServiceEnabled, KEEP_SIGNED_IN_KEY } from '../firebase/config';
 import {
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  deleteUser,
-  getAuth,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
-  inMemoryPersistence
+  browserSessionPersistence
 } from 'firebase/auth';
 import {
   ref as rtdbRef,
@@ -21,40 +23,16 @@ import {
   set as rtdbSet,
   push as rtdbPush,
   remove as rtdbRemove,
-  update as rtdbUpdate,
   query as rtdbQuery,
   limitToLast,
+  orderByChild,
+  equalTo,
   get as rtdbGet
 } from 'firebase/database';
 
-export const AuthContext = createContext(null);
-const DATA_VERSION = '7.0-natsuki-college-of-imus';
-
-// Automatic sign-out after 5 minutes without user interaction (300,000 ms).
+const DATA_VERSION = '8.0-city-college-of-tagaytay';
 const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
-
-const readStoredCollection = (key, fallback) => {
-  try {
-    const nciKey = key.replace(/^cct_/, 'nci_');
-    if (localStorage.getItem('nci_data_version') !== DATA_VERSION && localStorage.getItem('cct_data_version') !== DATA_VERSION) return fallback;
-    const saved = localStorage.getItem(nciKey) || localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
 const timestamp = () => new Date().toISOString().replace('T', ' ').substring(0, 19);
-
-const writeStoredCollection = (key, value) => {
-  try {
-    const nciKey = key.replace(/^cct_/, 'nci_');
-    localStorage.setItem(nciKey, JSON.stringify(value));
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.warn(`Local cache write skipped for ${key}:`, error);
-  }
-};
 
 const updateKeepSignedInPreference = (keepSignedIn) => {
   try {
@@ -66,33 +44,8 @@ const updateKeepSignedInPreference = (keepSignedIn) => {
 };
 
 
-const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key);
-
-// Avatar URLs originate from Supabase Storage and are persisted in RTDB and
-// localStorage before being bound to <img src>. Only well-formed https URLs
-// are accepted so a tampered database or cache cannot inject other schemes.
-const AVATAR_URL_PATTERN = /^https:\/\/[^\s"'<>\\]+$/i;
-const sanitizeAvatarUrl = (url) => {
-  const candidate = typeof url === 'string' ? url.trim() : '';
-  return AVATAR_URL_PATTERN.test(candidate) ? candidate : '';
-};
-
-const collectionToArray = (value) => {
-  if (Array.isArray(value)) return value.filter(Boolean);
-  if (value && typeof value === 'object') {
-    return Object.entries(value).map(([key, item]) => {
-      if (item && typeof item === 'object') return { id: item.id || key, ...item };
-      return { id: key, name: String(item), value: item };
-    });
-  }
-  return [];
-};
-
-const collectionToMap = (items, prefix) => items.reduce((result, item, index) => {
-  const id = String(item?.id || `${prefix}_${index + 1}`);
-  result[id] = { ...item, id };
-  return result;
-}, {});
+const collectionToArray = (value) => firebaseCollectionRows(value);
+const firebaseServiceError = isFirebaseInitialized ? '' : 'CCT Firebase services could not be initialized. Reload or contact the CCT administrator to check the configuration.';
 
 const normalizeDepartmentCollection = (items) => items
   .map((item) => (typeof item === 'string' ? item : item?.name || item?.value || item?.id))
@@ -107,7 +60,7 @@ const normalizeRecordCollection = (items) => items.map((record) => {
   return {
     ...record,
     academicYear: normalizeAcademicYear(record.academicYear),
-    status: record.status || RECORD_STATUS.APPROVED,
+    status: record.status || RECORD_STATUS.DRAFT,
     enrolledCount,
     passedCount,
     failedCount,
@@ -121,33 +74,6 @@ const normalizeRecordCollection = (items) => items.map((record) => {
   };
 });
 
-const validateRecordCollection = (items) => {
-  const seen = new Set();
-  for (let index = 0; index < items.length; index += 1) {
-    const record = items[index] || {};
-    const label = record.subjectCode || record.id || `record ${index + 1}`;
-    const counts = ['enrolledCount', 'passedCount', 'failedCount', 'droppedCount', 'incCount']
-      .map((field) => Number(record[field] ?? 0));
-    if (!record.department || !record.academicYear || !record.semester || !record.subjectCode || !record.subjectTitle) {
-      return `${label} is missing a required department, academic period, subject code, or subject title.`;
-    }
-    if (counts.some((count) => !Number.isInteger(count) || count < 0) || counts[0] <= 0) {
-      return `${label} contains invalid student counts.`;
-    }
-    if (counts.slice(1).reduce((sum, count) => sum + count, 0) > counts[0]) {
-      return `${label} classifies more outcomes than enrolled students.`;
-    }
-    const grade = Number(record.averageGrade);
-    if (!Number.isFinite(grade) || grade < 1 || grade > 5) {
-      return `${label} has an average grade outside the supported 1.00–5.00 range.`;
-    }
-    const duplicateKey = [record.department, record.programId || record.programName || '', normalizeAcademicYear(record.academicYear), record.semester, String(record.subjectCode).trim().toUpperCase()].join('|');
-    if (seen.has(duplicateKey)) return `${label} duplicates another record in the same department, year, and semester.`;
-    seen.add(duplicateKey);
-  }
-  return '';
-};
-
 const sha256 = async (text) => {
   if (!globalThis.crypto?.subtle || typeof TextEncoder === 'undefined') return null;
   const bytes = new TextEncoder().encode(text);
@@ -156,13 +82,13 @@ const sha256 = async (text) => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [accounts, setAccounts] = useState(() => readStoredCollection('cct_accounts', []));
-  const [records, setRecords] = useState(() => readStoredCollection('cct_records', []));
-  const [backups, setBackups] = useState(() => readStoredCollection('cct_backups', []));
-  const [auditLogs, setAuditLogs] = useState(() => readStoredCollection('cct_audit_logs', []));
-  const [departments, setDepartments] = useState(() => readStoredCollection('cct_departments', []));
-  const [programs, setPrograms] = useState(() => readStoredCollection('cct_programs', []));
-  const [subjectCatalog, setSubjectCatalog] = useState(() => readStoredCollection('cct_subject_catalog', []));
+  const [accounts, setAccounts] = useState([]);
+  const [records, setRecords] = useState([]);
+  const [backups, setBackups] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [programs, setPrograms] = useState([]);
+  const [subjectCatalog, setSubjectCatalog] = useState([]);
   const [rtdbLiveTicker, setRtdbLiveTicker] = useState([]);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(false);
   const [isAuthResolving, setIsAuthResolving] = useState(isFirebaseInitialized);
@@ -177,6 +103,61 @@ export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [inactivityNotice, setInactivityNotice] = useState('');
+  const cacheRef = useRef(null);
+  const sessionRef = useRef({ generation: 0, uid: '', scope: '' });
+  const connectedRef = useRef(false);
+  connectedRef.current = isFirebaseConnected;
+  const collectionsReadyRef = useRef(false);
+  const directoryRequestRef = useRef(null);
+  const catalogWriteErrorRef = useRef('');
+
+  const resetSessionData = () => {
+    sessionRef.current = { generation: sessionRef.current.generation + 1, uid: '', scope: '' };
+    collectionsReadyRef.current = false;
+    catalogWriteErrorRef.current = '';
+    cacheRef.current?.dispose({ clear: true }); cacheRef.current = null;
+    setAccounts([]); setRecords([]); setDepartments([]); setPrograms([]);
+    setSubjectCatalog([]); setBackups([]); setAuditLogs([]); setRtdbLiveTicker([]);
+    setDataSync({ status: 'idle', pendingWrites: 0, completedCollections: [], lastSyncedAt: '', error: '' });
+  };
+
+  const getAccountDirectory = (uid) => {
+    if (directoryRequestRef.current?.uid === uid) return directoryRequestRef.current.promise;
+    const promise = (async () => {
+      const access = (await withFirebaseReadDeadline(() => rtdbGet(rtdbRef(rtdb, `access/${uid}`)))).val();
+      if (!access || access.status !== 'Active' || !['VPAA','President','Deans','Heads'].includes(access.role)
+        || typeof access.department !== 'string' || !access.department.trim() || !/^[A-Za-z0-9_-]{1,128}$/.test(access.accountId || '')) return { matched: null, list: [] };
+      const snapshot = await withFirebaseReadDeadline(() => rtdbGet(rtdbRef(rtdb, access.role === 'VPAA' ? 'accounts' : `accounts/${access.accountId}`)));
+      const list = access.role === 'VPAA' ? parseRtdbSnapshot(snapshot) : snapshot.exists() ? [{ ...snapshot.val(), id: access.accountId }] : [];
+      const profile = list.find((account) => account.id === access.accountId);
+      return { list, matched: profile ? { ...profile, ...access, id: access.accountId, uid } : null };
+    })().catch((error) => {
+      if (directoryRequestRef.current?.promise === promise) directoryRequestRef.current = null;
+      throw error;
+    });
+    directoryRequestRef.current = { uid, promise };
+    return promise;
+  };
+
+  const activateAccount = (firebaseUser, matched, list) => {
+    const scope = createCacheScope(firebaseConfig.projectId, firebaseUser.uid, matched.role, matched.department);
+    if (sessionRef.current.scope !== scope) {
+      resetSessionData();
+      let storage;
+      try { storage = sessionStorage; } catch { /* Cache is optional. */ }
+      pruneCollectionCache(storage, firebaseConfig.projectId, scope);
+      try { removeLegacyCollectionCache(localStorage, firebaseConfig.projectId); } catch { /* Optional old cache cleanup. */ }
+      const cache = createCollectionCache({ storage, scope,
+        schedule: (task) => scheduleBackgroundTask(task, 1000), cancel: (cancelTask) => cancelTask?.() });
+      cacheRef.current = cache;
+      sessionRef.current = { generation: sessionRef.current.generation, uid: firebaseUser.uid, scope };
+      setRecords(cache.read('records')); setDepartments(cache.read('departments'));
+      setPrograms(cache.read('programs')); setSubjectCatalog(cache.read('subjects'));
+    }
+    accountsRef.current = list; setAccounts(list);
+    setCurrentUser(matched); setIsAuthenticated(true);
+  };
+
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
@@ -259,94 +240,7 @@ export const AuthProvider = ({ children }) => {
     };
   }, [currentUser]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('nci_data_version', DATA_VERSION);
-      localStorage.setItem('cct_data_version', DATA_VERSION);
-    } catch (error) {
-      console.warn('Local data-version cache write skipped:', error);
-    }
-    writeStoredCollection('cct_accounts', accounts);
-  }, [accounts]);
-
-  useEffect(() => {
-    writeStoredCollection('cct_records', records);
-  }, [records]);
-
-  useEffect(() => {
-    writeStoredCollection('cct_departments', departments);
-  }, [departments]);
-
-  useEffect(() => {
-    writeStoredCollection('cct_programs', programs);
-  }, [programs]);
-
-  useEffect(() => {
-    writeStoredCollection('cct_subject_catalog', subjectCatalog);
-  }, [subjectCatalog]);
-
-  useEffect(() => {
-    const backupMetadata = backups.slice(0, 100).map((backup) => {
-      const metadata = { ...backup };
-      delete metadata.rawContent;
-      return metadata;
-    });
-    writeStoredCollection('cct_backups', backupMetadata);
-  }, [backups]);
-
-  useEffect(() => {
-    writeStoredCollection('cct_audit_logs', auditLogs.slice(0, 500));
-  }, [auditLogs]);
-
-  const parseRtdbSnapshot = (snapshot) => {
-    if (!snapshot || !snapshot.exists()) return [];
-    const value = snapshot.val();
-    if (value === null || value === undefined) return [];
-    if (Array.isArray(value)) {
-      return value.filter(Boolean).map((item, index) => {
-        if (typeof item === 'object' && item !== null) {
-          return { id: item.id || `item_${index}`, ...item };
-        }
-        return item;
-      });
-    }
-    if (typeof value === 'object' && value !== null) {
-      return Object.keys(value).map((key) => {
-        const item = value[key];
-        if (typeof item === 'object' && item !== null) {
-          return { id: item.id || key, ...item };
-        }
-        return { id: key, name: String(item), value: item };
-      });
-    }
-    return [];
-  };
-
-  const resolveUserAvatarFromStorage = async (acc) => {
-    if (!acc || !acc.id || acc.avatarUrl) return sanitizeAvatarUrl(acc?.avatarUrl);
-    try {
-      const { supabase, isSupabaseConfigured, BUCKET_NAME } = await import('../supabase/client');
-      if (!isSupabaseConfigured || !supabase) return '';
-      const { data: existingFiles } = await supabase.storage
-        .from(BUCKET_NAME)
-        .list('', { limit: 100 });
-      const matchedFile = (existingFiles || []).find((f) => f.name && f.name.startsWith(acc.id));
-      if (matchedFile) {
-        const { data: urlData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(matchedFile.name);
-        if (urlData?.publicUrl) {
-          const resolvedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
-          try { localStorage.setItem(`nci_user_avatar_${acc.id}`, resolvedUrl); } catch { /* non-critical cache */ }
-          if (isFirebaseInitialized && rtdb) {
-            rtdbSet(rtdbRef(rtdb, `accounts/${acc.id}/avatarUrl`), resolvedUrl).catch(() => {});
-          }
-          return resolvedUrl;
-        }
-      }
-    } catch (e) {
-      console.warn('Avatar resolution from Supabase Storage skipped:', e);
-    }
-    return '';
-  };
+  const parseRtdbSnapshot = (snapshot) => firebaseCollectionRows(snapshot?.val());
 
   const accountsRef = React.useRef(accounts);
   accountsRef.current = accounts;
@@ -358,24 +252,32 @@ export const AuthProvider = ({ children }) => {
       return undefined;
     }
 
-    const unsubConnection = onValue(
-      rtdbRef(rtdb, '.info/connected'),
+    const unsubConnection = subscribeSafely(onValue,
+      () => rtdbRef(rtdb, '.info/connected'),
       (snapshot) => {
         const connected = snapshot.val() === true;
+        connectedRef.current = connected;
         setIsFirebaseConnected(connected);
         setDataSync((previous) => ({
           ...previous,
-          status: connected ? ((previous.completedCollections?.length || 0) >= 8 ? 'live' : 'syncing') : 'offline'
+          status: connected ? (previous.error ? 'error' : collectionsReadyRef.current ? 'live' : 'syncing') : 'offline'
         }));
       },
-      () => {
+      (error) => {
+        connectedRef.current = false;
         setIsFirebaseConnected(false);
-        setDataSync((previous) => ({ ...previous, status: 'offline' }));
+        setDataSync((previous) => ({ ...previous, status: 'offline', error: firebaseErrorMessage(error) }));
       }
     );
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    let disposed = false;
+    let authGeneration = 0;
+    const unsubscribeAuth = subscribeSafely(onAuthStateChanged, () => auth, async (firebaseUser) => {
+      const generation = ++authGeneration;
+      directoryRequestRef.current = null;
+      resetSessionData();
       if (!firebaseUser) {
+        try { pruneCollectionCache(sessionStorage, firebaseConfig.projectId); } catch { /* Optional cache cleanup. */ }
         setIsAuthenticated(false);
         setCurrentUser(null);
         setIsAuthResolving(false);
@@ -384,17 +286,10 @@ export const AuthProvider = ({ children }) => {
 
       setIsAuthResolving(true);
       try {
-        const snapshot = await rtdbGet(rtdbRef(rtdb, 'accounts'));
-        let list = parseRtdbSnapshot(snapshot);
-
-        list = list.map((acc) => ({
-          ...acc,
-          avatarUrl: sanitizeAvatarUrl(acc.avatarUrl || (acc.id ? localStorage.getItem(`nci_user_avatar_${acc.id}`) || '' : ''))
-        }));
-
+        const { list, matched } = await getAccountDirectory(firebaseUser.uid);
+        if (disposed || generation !== authGeneration || auth.currentUser?.uid !== firebaseUser.uid) return;
         accountsRef.current = list;
         setAccounts(list);
-        let matched = list.find((account) => account.email?.toLowerCase() === firebaseUser.email?.toLowerCase());
 
         if (!matched || matched.status === 'Suspended') {
           setIsAuthenticated(false);
@@ -403,27 +298,28 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (!matched.avatarUrl && matched.id) {
-          const resolvedAvatar = await resolveUserAvatarFromStorage(matched);
-          if (resolvedAvatar) {
-            matched = { ...matched, avatarUrl: resolvedAvatar };
-            setAccounts((prev) => prev.map((a) => a.id === matched.id ? matched : a));
-          }
-        }
-
-        setCurrentUser(matched);
-        setIsAuthenticated(true);
+        activateAccount(firebaseUser, matched, list);
       } catch (error) {
+        if (disposed || generation !== authGeneration) return;
         console.warn('Account-directory verification failed:', error);
         setIsAuthenticated(false);
         setCurrentUser(null);
+        setInactivityNotice('CCT access could not be verified. Reconnect and try again, or contact the CCT administrator.');
         await firebaseSignOut(auth).catch(() => {});
       } finally {
-        setIsAuthResolving(false);
+        if (!disposed && generation === authGeneration) setIsAuthResolving(false);
       }
+    }, () => {
+      if (disposed) return;
+      authGeneration += 1;
+      resetSessionData(); setIsAuthenticated(false); setCurrentUser(null); setIsAuthResolving(false);
+      setInactivityNotice('CCT authentication could not be verified. Reload and sign in again.');
+      void firebaseSignOut(auth).catch(() => {});
     });
 
     return () => {
+      disposed = true; authGeneration += 1;
+      cacheRef.current?.dispose();
       unsubscribeAuth();
       unsubConnection();
     };
@@ -433,68 +329,90 @@ export const AuthProvider = ({ children }) => {
     if (!isFirebaseInitialized || !rtdb || !auth || !isAuthenticated || !currentUser?.email) return undefined;
 
     let cancelled = false;
+    const sessionGeneration = sessionRef.current.generation;
+    const isCurrentSession = () => !cancelled && sessionRef.current.generation === sessionGeneration && auth.currentUser?.uid === currentUser.uid;
     const subscriptions = [];
-    const expectedCollections = ['accounts', 'requests', 'departments', 'programs', 'subjects', 'backups', 'auditLogs', 'activityTicker'];
+    const expectedCollections = ['accounts', 'requests', 'departments', 'programs', 'subjects', ...(currentUser.role === 'VPAA' ? ['backups', 'auditLogs'] : [])];
     const completed = new Set();
     const normalizationVersions = new Map();
+    const normalizationJobs = new Map();
+    const readErrors = new Map();
 
     setDataSync((previous) => ({
       ...previous,
-      status: isFirebaseConnected ? 'syncing' : 'offline',
+      status: connectedRef.current ? 'syncing' : 'offline',
       completedCollections: [],
       error: ''
     }));
 
     const markCollectionReady = (collection) => {
+      if (!isCurrentSession()) return;
       completed.add(collection);
+      readErrors.delete(collection);
       const completedCollections = Array.from(completed);
+      collectionsReadyRef.current = completedCollections.length >= expectedCollections.length;
       setDataSync((previous) => ({
         ...previous,
         status: completedCollections.length >= expectedCollections.length
-          ? (isFirebaseConnected ? 'live' : 'offline')
-          : (isFirebaseConnected ? 'syncing' : 'offline'),
+          ? (connectedRef.current ? 'live' : 'offline')
+          : (connectedRef.current ? 'syncing' : 'offline'),
         completedCollections,
         lastSyncedAt: new Date().toISOString(),
-        error: ''
+        error: Array.from(readErrors.values()).join('; '),
+        ...(readErrors.size && connectedRef.current ? { status: 'error' } : {})
       }));
     };
 
     const handleReadError = (collection) => (error) => {
+      if (!isCurrentSession()) return;
+      readErrors.set(collection, `${collection}: ${firebaseErrorMessage(error)}`);
       console.warn(`RTDB ${collection} subscription:`, error);
       setDataSync((previous) => ({
         ...previous,
-        status: isFirebaseConnected ? 'error' : 'offline',
-        error: `${collection}: ${error?.message || 'Unable to synchronize collection.'}`
+        status: connectedRef.current ? 'error' : 'offline',
+        error: Array.from(readErrors.values()).join('; ')
       }));
     };
 
     const normalizeAndApply = (collection, snapshot, fallback, apply) => {
+      const value = snapshot?.val();
       const version = (normalizationVersions.get(collection) || 0) + 1;
       normalizationVersions.set(collection, version);
 
-      void normalizeSnapshotInBackground(collection, snapshot?.val(), fallback)
+      normalizationJobs.get(collection)?.();
+      normalizationJobs.set(collection, scheduleBackgroundTask(() => {
+      normalizationJobs.delete(collection);
+      if (!isCurrentSession()) return;
+      void Promise.resolve().then(() => normalizeSnapshotInBackground(collection, value, fallback))
         .then((result) => {
-          if (cancelled || normalizationVersions.get(collection) !== version) return;
+          if (!isCurrentSession() || normalizationVersions.get(collection) !== version) return;
           apply(result);
+          cacheRef.current?.write(collection === 'requests' ? 'records' : collection, result);
           markCollectionReady(collection);
         })
         .catch(handleReadError(collection));
+      }, 120));
     };
 
     const startSubscriptions = () => {
-      if (cancelled) return;
+      if (!isCurrentSession()) return;
 
-      subscriptions.push(onValue(rtdbRef(rtdb, 'accounts'), async (snapshot) => {
-        let list = parseRtdbSnapshot(snapshot);
+      subscriptions.push(subscribeSafely(onValue, () => rtdbRef(rtdb, `access/${auth.currentUser.uid}`), (snapshot) => {
+        if (!isCurrentSession()) return;
+        const access = snapshot.val();
+        if (!access || access.status !== 'Active' || access.role !== currentUser.role || access.department !== currentUser.department) {
+          void logout();
+        }
+      }, () => { if (isCurrentSession()) void logout(); }));
 
-        list = list.map((acc) => ({
-          ...acc,
-          avatarUrl: sanitizeAvatarUrl(acc.avatarUrl || (acc.id ? localStorage.getItem(`nci_user_avatar_${acc.id}`) || '' : ''))
-        }));
+      subscriptions.push(subscribeSafely(onValue, () => rtdbRef(rtdb, currentUser.role === 'VPAA' ? 'accounts' : `accounts/${currentUser.id}`), (snapshot) => {
+        if (!isCurrentSession()) return;
+        const list = currentUser.role === 'VPAA' ? parseRtdbSnapshot(snapshot) : snapshot.exists() ? [{ ...snapshot.val(), id: currentUser.id }] : [];
 
         accountsRef.current = list;
         setAccounts(list);
-        let matched = list.find((account) => account.email?.toLowerCase() === auth.currentUser?.email?.toLowerCase());
+        const profile = list.find((account) => account.id === currentUser.id);
+        const matched = profile ? { ...profile, uid: auth.currentUser.uid, role: currentUser.role, department: currentUser.department } : null;
         if (!matched || matched.status === 'Suspended') {
           setIsAuthenticated(false);
           setCurrentUser(null);
@@ -502,35 +420,15 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (matched.id && matched.avatarUrl) {
-          try { localStorage.setItem(`nci_user_avatar_${matched.id}`, matched.avatarUrl); } catch { /* non-critical cache */ }
-        } else if (matched.id && !matched.avatarUrl) {
-          const resolvedAvatar = await resolveUserAvatarFromStorage(matched);
-          if (resolvedAvatar) {
-            matched = { ...matched, avatarUrl: resolvedAvatar };
-            setAccounts((prev) => prev.map((a) => a.id === matched.id ? matched : a));
-          }
-        }
-
-        const cachedAvatar = matched.id ? sanitizeAvatarUrl(localStorage.getItem(`nci_user_avatar_${matched.id}`)) : null;
-        const finalAvatar = matched.avatarUrl || cachedAvatar || '';
-        setCurrentUser({ ...matched, avatarUrl: finalAvatar });
-
-        // Asynchronously check missing avatars for all directory accounts in background
-        list.forEach((acc) => {
-          if (acc.id && !acc.avatarUrl) {
-            void resolveUserAvatarFromStorage(acc).then((resUrl) => {
-              if (resUrl && !cancelled) {
-                setAccounts((prev) => prev.map((item) => item.id === acc.id ? { ...item, avatarUrl: resUrl } : item));
-              }
-            });
-          }
-        });
-
+        activateAccount(auth.currentUser, matched, list);
         markCollectionReady('accounts');
       }, handleReadError('accounts')));
 
-      subscriptions.push(onValue(rtdbRef(rtdb, 'requests'), (snapshot) => {
+      const createRecordsQuery = () => currentUser.role === 'VPAA' ? rtdbRef(rtdb, 'requests')
+        : rtdbQuery(rtdbRef(rtdb, 'requests'), orderByChild(currentUser.role === 'President' ? 'status' : 'department'),
+          equalTo(currentUser.role === 'President' ? RECORD_STATUS.APPROVED : currentUser.department));
+      subscriptions.push(subscribeSafely(onValue, createRecordsQuery, (snapshot) => {
+        if (!isCurrentSession()) return;
         normalizeAndApply(
           'requests',
           snapshot,
@@ -539,16 +437,18 @@ export const AuthProvider = ({ children }) => {
         );
       }, handleReadError('requests')));
 
-      subscriptions.push(onValue(rtdbRef(rtdb, 'departments'), (snapshot) => {
+      subscriptions.push(subscribeSafely(onValue, () => rtdbRef(rtdb, 'departments'), (snapshot) => {
+        if (!isCurrentSession()) return;
         normalizeAndApply(
           'departments',
           snapshot,
-          (value) => normalizeDepartmentCollection(collectionToArray(value)),
+          (value) => normalizeDepartmentCollection(firebaseCollectionRows(value, { allowStrings: true })),
           setDepartments
         );
       }, handleReadError('departments')));
 
-      subscriptions.push(onValue(rtdbRef(rtdb, 'programs'), (snapshot) => {
+      subscriptions.push(subscribeSafely(onValue, () => rtdbRef(rtdb, 'programs'), (snapshot) => {
+        if (!isCurrentSession()) return;
         normalizeAndApply(
           'programs',
           snapshot,
@@ -562,7 +462,8 @@ export const AuthProvider = ({ children }) => {
         );
       }, handleReadError('programs')));
 
-      subscriptions.push(onValue(rtdbRef(rtdb, 'subjects'), (snapshot) => {
+      subscriptions.push(subscribeSafely(onValue, () => rtdbRef(rtdb, 'subjects'), (snapshot) => {
+        if (!isCurrentSession()) return;
         normalizeAndApply(
           'subjects',
           snapshot,
@@ -578,22 +479,20 @@ export const AuthProvider = ({ children }) => {
         );
       }, handleReadError('subjects')));
 
-      subscriptions.push(onValue(rtdbQuery(rtdbRef(rtdb, 'backups'), limitToLast(100)), (snapshot) => {
+      if (currentUser.role === 'VPAA') subscriptions.push(subscribeSafely(onValue, () => rtdbQuery(rtdbRef(rtdb, 'backups'), limitToLast(100)), (snapshot) => {
+        if (!isCurrentSession()) return;
         const list = parseRtdbSnapshot(snapshot).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
         setBackups(list);
         markCollectionReady('backups');
       }, handleReadError('backups')));
 
-      subscriptions.push(onValue(rtdbQuery(rtdbRef(rtdb, 'auditLogs'), limitToLast(500)), (snapshot) => {
+      if (currentUser.role === 'VPAA') subscriptions.push(subscribeSafely(onValue, () => rtdbQuery(rtdbRef(rtdb, 'auditLogs'), limitToLast(500)), (snapshot) => {
+        if (!isCurrentSession()) return;
         const list = parseRtdbSnapshot(snapshot).sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
         setAuditLogs(list);
         markCollectionReady('auditLogs');
       }, handleReadError('auditLogs')));
 
-      subscriptions.push(onValue(rtdbQuery(rtdbRef(rtdb, 'activityTicker'), limitToLast(25)), (snapshot) => {
-        setRtdbLiveTicker(parseRtdbSnapshot(snapshot).reverse().slice(0, 5));
-        markCollectionReady('activityTicker');
-      }, handleReadError('activityTicker')));
     };
 
     const cancelScheduledStart = scheduleBackgroundTask(startSubscriptions, 300);
@@ -601,9 +500,10 @@ export const AuthProvider = ({ children }) => {
     return () => {
       cancelled = true;
       cancelScheduledStart?.();
+      normalizationJobs.forEach((cancelJob) => cancelJob());
       subscriptions.forEach((unsubscribe) => unsubscribe?.());
     };
-  }, [isAuthenticated, currentUser?.email, isFirebaseConnected]);
+  }, [isAuthenticated, currentUser?.id, currentUser?.uid, currentUser?.email, currentUser?.role, currentUser?.department]);
 
   const broadcastRealtimeActivity = (action, details) => {
     const item = {
@@ -613,38 +513,37 @@ export const AuthProvider = ({ children }) => {
       details
     };
 
-    if (isFirebaseInitialized && rtdb) {
-      rtdbPush(rtdbRef(rtdb, 'activityTicker'), item).catch((error) => {
-        console.warn('RTDB activity broadcast:', error);
-      });
-    }
-
     setRtdbLiveTicker((previous) => [item, ...previous].slice(0, 5));
   };
 
   const addAuditLog = (action, details) => {
-    const newLog = {
-      id: `log_${Date.now()}`,
-      timestamp: timestamp(),
-      user: currentUser?.email || 'System',
-      action,
-      details
-    };
-
-    setAuditLogs((previous) => [newLog, ...previous].slice(0, 500));
-
-    if (isFirebaseInitialized && rtdb) {
-      rtdbSet(rtdbRef(rtdb, `auditLogs/${newLog.id}`), newLog).catch((error) => {
-        console.warn('RTDB audit log write:', error);
-      });
-    }
-
+    // Activity feedback is local. Authoritative audit entries are created only by CCT server functions.
     broadcastRealtimeActivity(action, details);
   };
 
-  const syncRecord = (record) => {
-    if (!isFirebaseInitialized || !rtdb) return;
-    runBackgroundWrite('save academic record', () => rtdbSet(rtdbRef(rtdb, `requests/${record.id}`), record));
+  const syncRecord = async (record, expected = null, remove = false, authorize = () => true) => {
+    if (!isFirebaseInitialized || !rtdb || !connectedRef.current) {
+      return { success: false, message: 'Reconnect before saving. Your form stays open so you can try again.' };
+    }
+    const generation = sessionRef.current.generation;
+    setDataSync((previous) => ({ ...previous, pendingWrites: previous.pendingWrites + 1 }));
+    try {
+      const result = await runRecordTransaction(rtdb, `requests/${record.id}`,
+        { record, expected, remove, authorize }, () => sessionRef.current.generation === generation);
+      if (sessionRef.current.generation !== generation) return { success: false, message: 'Your account session changed.' };
+      if (!result.committed && expected && !result.snapshot.exists()) return { success: false, message: 'This CCT record no longer exists. Close the form and refresh the list.' };
+      if (!result.committed) return { success: false, message: expected
+        ? 'This record was changed on another device. Close this form and reopen the latest record before saving.'
+        : 'Another user already saved this subject for the same Academic Year and semester. Refresh the record list.' };
+      return { success: true, record: result.snapshot.val() };
+    } catch (error) {
+      return { success: false, message: error?.code?.includes('permission')
+        ? 'You no longer have access to save this record.' : 'The record could not be saved. Please try again.' };
+    } finally {
+      if (sessionRef.current.generation === generation) setDataSync((previous) => ({
+        ...previous, pendingWrites: Math.max(0, previous.pendingWrites - 1)
+      }));
+    }
   };
 
   const loginWithEmail = async (email, password, keepSignedIn = false) => {
@@ -658,51 +557,35 @@ export const AuthProvider = ({ children }) => {
         await setPersistence(auth, browserLocalPersistence);
       } else {
         updateKeepSignedInPreference(false);
-        await setPersistence(auth, inMemoryPersistence);
+        await setPersistence(auth, browserSessionPersistence);
       }
 
       const credential = await signInWithEmailAndPassword(auth, email, password);
-      const accountSnapshot = await rtdbGet(rtdbRef(rtdb, 'accounts'));
-      let list = parseRtdbSnapshot(accountSnapshot);
-
-      list = list.map((acc) => ({
-        ...acc,
-        avatarUrl: sanitizeAvatarUrl(acc.avatarUrl || (acc.id ? localStorage.getItem(`nci_user_avatar_${acc.id}`) || '' : ''))
-      }));
+      const { list, matched } = await getAccountDirectory(credential.user.uid);
+      if (auth.currentUser?.uid !== credential.user.uid) return { success: false, message: 'Sign-in session changed. Please try again.' };
 
       accountsRef.current = list;
       setAccounts(list);
-      const matched = list.find((account) => account.email?.toLowerCase() === credential.user.email?.toLowerCase());
 
       if (!matched) {
         updateKeepSignedInPreference(false);
         await firebaseSignOut(auth);
-        return { success: false, message: 'This Firebase user is not provisioned in the institutional accounts directory.' };
+        return { success: false, message: 'Sign-in could not be completed. Check your CCT credentials or contact the CCT administrator.' };
       }
       if (matched.status === 'Suspended') {
         updateKeepSignedInPreference(false);
         await firebaseSignOut(auth);
-        return { success: false, message: 'This account has been suspended by VPAA.' };
+        return { success: false, message: 'Sign-in could not be completed. Check your CCT credentials or contact the CCT administrator.' };
       }
 
-      setCurrentUser(matched);
-      setIsAuthenticated(true);
+      activateAccount(credential.user, matched, list);
       addAuditLog('Firebase Auth Sign In', `Signed in as ${email}`);
       return { success: true };
     } catch (error) {
       console.warn('Firebase Auth sign in failure:', error.code, error.message);
-      let message = 'Invalid email or password.';
-      if (error.code === 'auth/api-key-not-valid' || error.message?.includes('api-key-not-valid')) {
-        message = 'Firebase API key is invalid. Please copy .env.example to .env.local and enter your real Firebase VITE_FIREBASE_API_KEY.';
-      } else if (error.code === 'auth/invalid-email') message = 'Please enter a valid institutional email address.';
-      else if (error.code === 'auth/user-disabled') message = 'This account has been disabled.';
-      else if (error.code === 'auth/too-many-requests') message = 'Too many failed attempts. Please try again later.';
-      else if (error.code === 'auth/network-request-failed') message = 'Network connection issue. Please check your internet connection.';
-      else if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        message = 'Invalid institutional email or password.';
-      } else if (error.message) {
-        message = error.message.replace(/^Firebase:\s*/, '');
-      }
+      let message = 'Sign-in could not be completed. Check your CCT credentials or contact the CCT administrator.';
+      if (error?.code === 'auth/too-many-requests') message = 'Too many sign-in attempts. Please try again later.';
+      else if (['auth/network-request-failed', 'firebase/read-timeout'].includes(error?.code)) message = 'Check your connection and try again.';
       return { success: false, message };
     }
   };
@@ -710,6 +593,8 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     updateKeepSignedInPreference(false);
+    cacheRef.current?.dispose({ clear: true });
+    resetSessionData();
     if (isFirebaseInitialized && auth) {
       try {
         await firebaseSignOut(auth);
@@ -722,268 +607,60 @@ export const AuthProvider = ({ children }) => {
   };
 
 
-  const addAccount = async (accountData) => {
-    if (!permissions.canManageAccounts) return { success: false, message: 'Only the VPAA can create accounts.' };
-    if (!isFirebaseInitialized || !rtdb) return { success: false, message: 'Firebase is not configured for account provisioning.' };
-
-    const name = String(accountData?.name || '').trim();
-    const email = String(accountData?.email || '').trim().toLowerCase();
-    const password = String(accountData?.password || '');
-    const role = accountData?.role;
-    const department = String(accountData?.department || '').trim();
-    const allowedRoles = ['VPAA', 'President', 'Deans', 'Heads'];
-
-    if (!name || !department) return { success: false, message: 'Name and department scope are required.' };
-    if (!/^[^\s@]+@college\.cvt\.edu$/i.test(email) && !/^[^\s@]+\.imus@college\.cvt\.edu$/i.test(email)) {
-      return { success: false, message: 'Use a valid @college.cvt.edu institutional email address.' };
-    }
-    if (!allowedRoles.includes(role)) return { success: false, message: 'Select a supported institutional role.' };
-    if (password.length < 6) return { success: false, message: 'Initial password must contain at least 6 characters.' };
-    if (accounts.some((account) => account.email?.toLowerCase() === email)) {
-      return { success: false, message: 'An account with this email already exists in the institutional directory.' };
-    }
-
-    const newAccount = {
-      id: `usr_${Date.now()}`,
-      name,
-      email,
-      role,
-      department,
-      status: 'Active',
-      createdAt: new Date().toISOString().split('T')[0],
-      lastLogin: 'Never'
-    };
-
-    let secondaryApp = null;
-    let createdAuthUser = null;
+  const callAccountAction = async (payload) => {
+    if (!isCctAdminServiceEnabled) return { success: false, message: 'CCT account administration is managed by the project administrator until the secure service is enabled.' };
+    const generation = sessionRef.current.generation;
     try {
-      secondaryApp = initializeApp(firebaseConfig, `AuthWorker_${Date.now()}`);
-      const secondaryAuth = getAuth(secondaryApp);
-      const credential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-      createdAuthUser = credential.user;
-
-      await rtdbSet(rtdbRef(rtdb, `accounts/${newAccount.id}`), newAccount);
-      setAccounts((previous) => [...previous, newAccount]);
-      addAuditLog('Create Account', `Created account ${newAccount.email} (${newAccount.role})`);
-      return { success: true, account: newAccount };
+      const result = await httpsCallable(functions, 'manageCctAccount')(payload);
+      if (sessionRef.current.generation !== generation) return { success: false, message: 'Your CCT account session changed.' };
+      if (typeof result.data?.success !== 'boolean') return { success: false, message: 'The CCT account service returned an incomplete response. Refresh before retrying.' };
+      return result.data;
     } catch (error) {
-      if (createdAuthUser) await deleteUser(createdAuthUser).catch(() => {});
-      let message = 'Account provisioning failed.';
-      if (error.code === 'auth/email-already-in-use') message = 'An account with this email already exists in Firebase Authentication.';
-      else if (error.code === 'auth/weak-password') message = 'Password should be at least 6 characters.';
-      else if (error.code === 'auth/invalid-email') message = 'Invalid email address format.';
-      else if (error.code === 'PERMISSION_DENIED' || error.code === 'permission-denied') message = 'Firebase rejected the institutional directory write. Review Realtime Database rules.';
-      else if (error.message) message = error.message.replace(/^Firebase:\s*/, '');
-      return { success: false, message };
-    } finally {
-      if (secondaryApp) await deleteApp(secondaryApp).catch(() => {});
+      const trustedCodes = ['functions/invalid-argument', 'functions/failed-precondition', 'functions/already-exists', 'functions/resource-exhausted'];
+      return { success: false, message: trustedCodes.includes(error.code) ? error.message
+        : 'The CCT account service could not complete this action. Contact the CCT administrator if it persists.' };
     }
   };
 
-  const updateAccount = async (id, updatedData) => {
+  const addAccount = async (profile) => {
+    if (!permissions.canManageAccounts) return { success: false, message: 'Only the CCT VPAA can create accounts.' };
+    return callAccountAction({ action: 'create', profile });
+  };
+
+  const updateAccount = async (id, updatedData = {}) => {
     const existing = accounts.find((account) => account.id === id);
-    if (!existing) return { success: false, message: 'Account not found.' };
-
-    const isSelfUpdate = currentUser?.id === id;
-    if (!permissions.canManageAccounts && !isSelfUpdate) {
-      return { success: false, message: 'You can only update your own display name.' };
+    if (!existing) return { success: false, message: 'CCT account not found.' };
+    if (updatedData.email && updatedData.email.trim().toLowerCase() !== String(existing.email || '').toLowerCase()) {
+      return { success: false, message: 'CCT email changes require a verified Authentication update.' };
     }
-
-    if (hasOwn(updatedData, 'email') && String(updatedData.email).trim().toLowerCase() !== existing.email?.toLowerCase()) {
-      return { success: false, message: 'Institutional email changes must be completed in Firebase Authentication before updating the directory.' };
-    }
-
-    const safeData = permissions.canManageAccounts
-      ? {
-          name: String(updatedData.name ?? existing.name).trim(),
-          role: updatedData.role ?? existing.role,
-          department: String(updatedData.department ?? existing.department).trim(),
-          avatarUrl: updatedData.avatarUrl !== undefined ? sanitizeAvatarUrl(updatedData.avatarUrl) : (existing.avatarUrl || '')
-        }
-      : {
-          name: String(updatedData.name ?? existing.name).trim(),
-          avatarUrl: updatedData.avatarUrl !== undefined ? sanitizeAvatarUrl(updatedData.avatarUrl) : (existing.avatarUrl || '')
-        };
-
-    if (!safeData.name) return { success: false, message: 'Display name cannot be empty.' };
-    if (permissions.canManageAccounts && (!safeData.department || !['VPAA', 'President', 'Deans', 'Heads'].includes(safeData.role))) {
-      return { success: false, message: 'A supported role and department scope are required.' };
-    }
-
-    const updatedAccount = { ...existing, ...safeData };
+    const isOwnNameChange = currentUser?.id === id && Object.keys(updatedData).every((key) => key === 'name');
+    if (permissions.canManageAccounts && !isOwnNameChange) return callAccountAction({ action: 'update', id,
+      profile: { name: updatedData.name ?? existing.name, role: updatedData.role ?? existing.role,
+        department: updatedData.department ?? existing.department } });
+    if (currentUser?.id !== id) return { success: false, message: 'You can update only your own CCT display name.' };
+    const name = String(updatedData.name || '').trim();
+    if (!name || name.length > 100) return { success: false, message: 'Enter a CCT display name of 1-100 characters.' };
+    if (!isFirebaseInitialized || !rtdb) return { success: false, message: firebaseServiceError };
+    if (!connectedRef.current) return { success: false, message: 'Reconnect before saving your CCT display name.' };
+    const generation = sessionRef.current.generation;
     try {
-      if (isFirebaseInitialized && rtdb) await rtdbSet(rtdbRef(rtdb, `accounts/${id}`), updatedAccount);
-    } catch (error) {
-      console.warn('RTDB account update note:', error);
-    }
-    setAccounts((previous) => previous.map((account) => account.id === id ? updatedAccount : account));
-    if (isSelfUpdate) {
-      setCurrentUser(updatedAccount);
-      if (updatedAccount.avatarUrl) {
-        try { localStorage.setItem(`nci_user_avatar_${id}`, updatedAccount.avatarUrl); } catch { /* non-critical cache */ }
-      }
-    }
-    addAuditLog('Update Account', `Updated profile for ${updatedAccount.email}`);
-    return { success: true, account: updatedAccount };
-  };
-
-  const compressImageForAvatar = (file, maxSize = 1024) => {
-    return new Promise((resolve) => {
-      if (!file || !file.type || !file.type.startsWith('image/')) {
-        resolve(file);
-        return;
-      }
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const minDim = Math.min(img.width, img.height);
-        const sx = (img.width - minDim) / 2;
-        const sy = (img.height - minDim) / 2;
-        const targetSize = Math.min(minDim, maxSize);
-
-        const canvas = document.createElement('canvas');
-        canvas.width = targetSize;
-        canvas.height = targetSize;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(file);
-          return;
-        }
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, targetSize, targetSize);
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              resolve(file);
-              return;
-            }
-            const resizedFile = new File([blob], (file.name || 'avatar').replace(/\.[^/.]+$/, '') + '.jpg', {
-              type: 'image/jpeg',
-              lastModified: Date.now()
-            });
-            resolve(resizedFile);
-          },
-          'image/jpeg',
-          0.92
-        );
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        resolve(file);
-      };
-      img.src = url;
-    });
-  };
-
-  const uploadAvatar = async (file) => {
-    if (!currentUser?.id) return { success: false, message: 'Must be logged in to upload avatar.' };
-    if (!file) return { success: false, message: 'No file selected.' };
-
-    try {
-      const { supabase, isSupabaseConfigured, BUCKET_NAME } = await import('../supabase/client');
-      if (!isSupabaseConfigured || !supabase) {
-        return {
-          success: false,
-          message: 'Supabase is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your .env file.'
-        };
-      }
-
-      // 1. Compress high-res mobile photos (iPhone HEIC/JPEG or Android Camera photos)
-      const compressedFile = await compressImageForAvatar(file);
-
-      // 2. Delete all previous avatar files belonging to this user in Supabase Storage across all file extensions
-      try {
-        const defaultExts = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-        const targetFiles = defaultExts.map((ext) => `${currentUser.id}.${ext}`);
-
-        const { data: existingFiles } = await supabase.storage
-          .from(BUCKET_NAME)
-          .list('', { limit: 100 });
-
-        const listedFiles = (existingFiles || [])
-          .filter((f) => f.name && f.name.startsWith(currentUser.id))
-          .map((f) => f.name);
-
-        const filesToRemove = Array.from(new Set([...targetFiles, ...listedFiles]));
-
-        if (filesToRemove.length > 0) {
-          const { error: removeErr } = await supabase.storage
-            .from(BUCKET_NAME)
-            .remove(filesToRemove);
-
-          if (removeErr) {
-            console.warn('Supabase storage remove note:', removeErr.message);
-          }
-        }
-      } catch (cleanupErr) {
-        console.warn('Supabase storage old file list/remove cleanup note:', cleanupErr);
-      }
-
-      // 3. Upload the new compressed profile picture file
-      const rawExt = (compressedFile.name || file.name || 'avatar.jpg').split('.').pop() || 'jpg';
-      const fileExt = rawExt.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-      const filePath = `${currentUser.id}_${Date.now()}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(filePath, compressedFile, { upsert: true, cacheControl: '0', contentType: compressedFile.type || 'image/jpeg' });
-
-      if (uploadError) {
-        return { success: false, message: uploadError.message || 'Supabase Storage upload failed.' };
-      }
-
-      const { data: urlData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath);
-      const baseUrl = urlData?.publicUrl;
-
-      if (!baseUrl) {
-        return { success: false, message: 'Could not obtain public URL for uploaded profile picture.' };
-      }
-
-      // Add timestamp cache-buster so browsers immediately reload updated avatars
-      const avatarUrl = `${baseUrl}?v=${Date.now()}`;
-
-      // Cache avatar URL locally by user ID only
-      if (currentUser.id) {
-        try { localStorage.setItem(`nci_user_avatar_${currentUser.id}`, avatarUrl); } catch { /* non-critical cache */ }
-      }
-
-      const result = await updateAccount(currentUser.id, { avatarUrl });
-
-      return result.success
-        ? { success: true, avatarUrl, message: 'Profile picture updated and previous files removed.' }
-        : result;
-    } catch (err) {
-      console.warn('Supabase Avatar Upload Error:', err);
-      return { success: false, message: err.message || 'Failed to upload profile picture.' };
+      await rtdbSet(rtdbRef(rtdb, 'accounts/' + id + '/name'), name);
+      if (generation !== sessionRef.current.generation) return { success: false, message: 'Your CCT account session changed.' };
+      return { success: true, account: { ...existing, name } };
+    } catch {
+      return { success: false, message: 'Your CCT display name could not be saved. Please try again.' };
     }
   };
 
   const toggleAccountStatus = async (id) => {
-    if (!permissions.canManageAccounts) return { success: false, message: 'Only the VPAA can change account status.' };
+    if (!permissions.canManageAccounts) return { success: false, message: 'Only the CCT VPAA can change account status.' };
     const existing = accounts.find((account) => account.id === id);
-    if (!existing) return { success: false, message: 'Account not found.' };
-    if (existing.id === currentUser?.id) return { success: false, message: 'The active VPAA account cannot suspend itself.' };
-
-    const updatedAccount = {
-      ...existing,
-      status: existing.status === 'Active' ? 'Suspended' : 'Active'
-    };
-
-    try {
-      if (isFirebaseInitialized && rtdb) await rtdbSet(rtdbRef(rtdb, `accounts/${id}`), updatedAccount);
-      setAccounts((previous) => previous.map((account) => account.id === id ? updatedAccount : account));
-      addAuditLog('Account Status Changed', `Set ${updatedAccount.email} to ${updatedAccount.status}`);
-      return { success: true, account: updatedAccount };
-    } catch (error) {
-      console.warn('RTDB account status update:', error);
-      return { success: false, message: 'Firebase rejected the account status change.' };
-    }
+    if (!existing) return { success: false, message: 'CCT account not found.' };
+    return callAccountAction({ action: 'status', id, status: existing.status === 'Active' ? 'Suspended' : 'Active' });
   };
 
   const isRecordInUserDepartment = (record) => record?.department === currentUser?.department;
-  const isRecordOwner = (record) => record?.encodedById === currentUser?.id || record?.encodedBy === currentUser?.name;
+  const isRecordOwner = (record) => Boolean(currentUser?.uid) && record?.encodedByUid === currentUser.uid;
 
   const canEditRecord = (record) => {
     if (!record || !currentUser) return false;
@@ -1073,7 +750,7 @@ export const AuthProvider = ({ children }) => {
       && String(record.subjectCode || '').trim().toUpperCase().replace(/\s+/g, ' ') === normalizedCode);
   };
 
-  const addRecord = (recordData) => {
+  const addRecord = async (recordData) => {
     if (!permissions.canCreateRecords) return { success: false, message: 'The President role is read-only.' };
     if (!permissions.isVPAA && recordData.department !== currentUser?.department) {
       return { success: false, message: 'You can only create records for your assigned academic unit.' };
@@ -1089,8 +766,13 @@ export const AuthProvider = ({ children }) => {
     const status = isSubmittedForApproval ? RECORD_STATUS.PENDING : RECORD_STATUS.APPROVED;
     const numbers = normalizeRecordNumbers(recordData);
 
+    const identity = JSON.stringify([recordData.department, recordData.programId || recordData.programName || '',
+      normalizeAcademicYear(recordData.academicYear), recordData.semester,
+      recordData.subjectCode.trim().toUpperCase().replace(/\s+/g, ' ')]);
+    const identityHash = await sha256(identity);
+    if (!identityHash) return { success: false, message: 'Use a secure connection before saving academic records.' };
     const newRecord = {
-      id: `rec_${Date.now()}`,
+      id: `rec_${identityHash}`,
       ...recordData,
       ...numbers,
       subjectCode: recordData.subjectCode.trim().toUpperCase().replace(/\s+/g, ' '),
@@ -1098,7 +780,13 @@ export const AuthProvider = ({ children }) => {
       academicYear: normalizeAcademicYear(recordData.academicYear),
       encodedBy: currentUser.name,
       encodedById: currentUser.id,
-      updatedAt: new Date().toISOString().split('T')[0],
+      encodedByUid: currentUser.uid,
+      modifiedByUid: currentUser.uid,
+      approvedByUid: status === RECORD_STATUS.APPROVED ? currentUser.uid : '',
+      reviewedByUid: '',
+      reviewedBy: '',
+      reviewedAt: '',
+      updatedAt: new Date().toISOString(),
       status,
       submittedAt: isSubmittedForApproval ? now : '',
       approvedBy: status === RECORD_STATUS.APPROVED ? currentUser.name : '',
@@ -1106,16 +794,17 @@ export const AuthProvider = ({ children }) => {
       reviewNote: status === RECORD_STATUS.APPROVED ? 'Created by an authorized approver.' : ''
     };
 
-    setRecords((previous) => [newRecord, ...previous]);
-    syncRecord(newRecord);
+    const saved = await syncRecord(newRecord);
+    if (!saved.success) return saved;
+
     addAuditLog(
       isSubmittedForApproval ? 'Record Submitted for Dean Approval' : 'Record Approved and Encoded',
       `${newRecord.subjectCode} (${newRecord.department})`
     );
-    return { success: true, record: newRecord };
+    return saved;
   };
 
-  const updateRecord = (id, updatedData) => {
+  const updateRecord = async (id, updatedData, original) => {
     const existing = records.find((record) => record.id === id);
     if (!existing) return { success: false, message: 'Record not found.' };
     if (!canEditRecord(existing)) return { success: false, message: 'You do not have permission to edit this record.' };
@@ -1137,13 +826,19 @@ export const AuthProvider = ({ children }) => {
       subjectCode: String(updatedData.subjectCode || existing.subjectCode).trim().toUpperCase().replace(/\s+/g, ' '),
       subjectTitle: String(updatedData.subjectTitle || existing.subjectTitle).trim(),
       academicYear: normalizeAcademicYear(updatedData.academicYear || existing.academicYear),
-      updatedAt: new Date().toISOString().split('T')[0]
+      encodedByUid: existing.encodedByUid || (permissions.isVPAA ? currentUser.uid : ''),
+      modifiedByUid: currentUser.uid,
+      updatedAt: new Date().toISOString()
     };
 
     if (permissions.isHead) {
       updatedRecord.status = RECORD_STATUS.PENDING;
       updatedRecord.submittedAt = timestamp();
       updatedRecord.approvedBy = '';
+      updatedRecord.approvedByUid = '';
+      updatedRecord.reviewedByUid = '';
+      updatedRecord.reviewedBy = '';
+      updatedRecord.reviewedAt = '';
       updatedRecord.approvedAt = '';
       updatedRecord.reviewNote = '';
     } else if (!permissions.isVPAA) {
@@ -1154,26 +849,29 @@ export const AuthProvider = ({ children }) => {
       const now = timestamp();
       if (updatedRecord.status === RECORD_STATUS.APPROVED) {
         updatedRecord.approvedBy = currentUser.name;
+        updatedRecord.approvedByUid = currentUser.uid;
         updatedRecord.approvedAt = existing.status === RECORD_STATUS.APPROVED && existing.approvedAt
           ? existing.approvedAt
           : now;
       } else {
         updatedRecord.approvedBy = '';
+        updatedRecord.approvedByUid = '';
         updatedRecord.approvedAt = '';
         if (updatedRecord.status === RECORD_STATUS.PENDING) updatedRecord.submittedAt = now;
       }
     }
 
-    setRecords((previous) => previous.map((record) => record.id === id ? updatedRecord : record));
-    syncRecord(updatedRecord);
+    const saved = await syncRecord(updatedRecord, original || existing, false, canEditRecord);
+    if (!saved.success) return saved;
+
     addAuditLog(
       permissions.isHead ? 'Record Revised and Resubmitted' : 'Record Updated',
       `${updatedRecord.subjectCode} (${updatedRecord.department})`
     );
-    return { success: true, record: updatedRecord };
+    return saved;
   };
 
-  const reviewRecord = (id, decision, note = '') => {
+  const reviewRecord = async (id, decision, note = '', original) => {
     const existing = records.find((record) => record.id === id);
     if (!existing) return { success: false, message: 'Record not found.' };
     if (!canApproveRecord(existing)) return { success: false, message: 'You do not have approval authority for this record.' };
@@ -1182,44 +880,48 @@ export const AuthProvider = ({ children }) => {
     const updatedRecord = {
       ...existing,
       status: approved ? RECORD_STATUS.APPROVED : RECORD_STATUS.RETURNED,
+      encodedByUid: existing.encodedByUid || (permissions.isVPAA ? currentUser.uid : ''),
       approvedBy: approved ? currentUser.name : '',
+      approvedByUid: approved ? currentUser.uid : '',
+      modifiedByUid: currentUser.uid,
+      reviewedByUid: currentUser.uid,
       approvedAt: approved ? timestamp() : '',
       reviewedBy: currentUser.name,
       reviewedAt: timestamp(),
       reviewNote: note.trim() || (approved ? 'Reviewed and approved.' : 'Returned for revision.'),
-      updatedAt: new Date().toISOString().split('T')[0]
+      updatedAt: new Date().toISOString()
     };
 
-    setRecords((previous) => previous.map((record) => record.id === id ? updatedRecord : record));
-    syncRecord(updatedRecord);
+    const saved = await syncRecord(updatedRecord, original || existing, false, canApproveRecord);
+    if (!saved.success) return saved;
+
     addAuditLog(
       approved ? 'Record Approved' : 'Record Returned for Revision',
       `${updatedRecord.subjectCode} reviewed by ${currentUser.name}`
     );
-    return { success: true, record: updatedRecord };
+    return saved;
   };
 
-  const deleteRecord = (id) => {
+  const deleteRecord = async (id, original) => {
     const target = records.find((record) => record.id === id);
     if (!target) return { success: false, message: 'Record not found.' };
     if (!canDeleteRecord(target)) return { success: false, message: 'You do not have permission to delete this record.' };
 
-    setRecords((previous) => previous.filter((record) => record.id !== id));
-    if (isFirebaseInitialized && rtdb) {
-      runBackgroundWrite('remove academic record', () => rtdbRemove(rtdbRef(rtdb, `requests/${id}`)));
-    }
+    const saved = await syncRecord(target, original || target, true, canDeleteRecord);
+    if (!saved.success) return saved;
     addAuditLog('Record Deleted', `Deleted ${target.subjectCode} (${target.department})`);
     return { success: true };
   };
 
-  const createBackup = async (type = 'Manual Export') => {
+  const createBackup = async (type = 'Manual Export', academicSnapshot = {}) => {
+    const generation = sessionRef.current.generation;
     if (!permissions.canManageBackups) return { success: false, message: 'Only the VPAA can create system backups.' };
 
     try {
       const now = new Date();
       const timestampString = timestamp();
       const dateCode = now.toISOString().split('T')[0].replace(/-/g, '');
-      const snapshotData = {
+      let snapshotData = {
         accounts,
         records,
         auditLogs,
@@ -1228,29 +930,41 @@ export const AuthProvider = ({ children }) => {
         subjectCatalog,
         exportedAt: timestampString,
         version: DATA_VERSION,
-        college: 'Natsuki College of Imus'
+        college: 'City College of Tagaytay'
       };
+      const canSynchronize = isFirebaseInitialized && rtdb && isFirebaseConnected;
+      if (canSynchronize) {
+        // Read complete authorized collections, including catalog keys used by student links.
+        const paths = ['accounts', 'requests', 'auditLogs', 'departments', 'programs', 'subjects', ...MODULE_COLLECTIONS];
+        const snapshots = await withFirebaseReadDeadline(() => Promise.all(paths.map((path) => rtdbGet(rtdbRef(rtdb, path)))));
+        const aliases = { requests: 'records', subjects: 'subjectCatalog' };
+        snapshotData = { ...snapshotData, ...Object.fromEntries(paths.map((path, index) => [aliases[path] || path, snapshots[index].val() || {}])) };
+      } else {
+        snapshotData = { ...snapshotData, ...academicSnapshot };
+      }
+      if (sessionRef.current.generation !== generation) return { success: false, message: 'Your account session changed. Reopen this workspace before continuing.' };
       const jsonString = JSON.stringify(snapshotData, null, 2);
       const digest = await sha256(jsonString);
       const checksumSuffix = digest || `unavailable-${Date.now().toString(16)}`;
 
-      const canSynchronize = isFirebaseInitialized && rtdb && isFirebaseConnected;
       const newBackup = {
-        id: `bkp_${Date.now()}`,
-        fileName: `nci_academic_db_${dateCode}_${checksumSuffix.slice(0, 8)}.json`,
+        id: rtdbPush(rtdbRef(rtdb, 'backups')).key,
+        fileName: `cct_academic_db_${dateCode}_${checksumSuffix.slice(0, 8)}.json`,
         fileSize: `${(new Blob([jsonString]).size / 1024).toFixed(2)} KB`,
         createdAt: timestampString,
         type,
         status: canSynchronize ? 'Completed' : 'Local Export',
         createdBy: currentUser.name,
+        createdByUid: currentUser.uid,
         checksum: digest ? `sha256-${digest}` : checksumSuffix,
         rawContent: jsonString
       };
 
-      setBackups((previous) => [newBackup, ...previous].slice(0, 100));
       if (canSynchronize) {
         await rtdbSet(rtdbRef(rtdb, `backups/${newBackup.id}`), newBackup);
       }
+      if (sessionRef.current.generation !== generation) return { success: false, message: 'Your account session changed. Reopen this workspace before continuing.' };
+      setBackups((previous) => [newBackup, ...previous.filter((backup) => backup.id !== newBackup.id)].slice(0, 100));
       addAuditLog('Backup Created', `Generated ${type} snapshot: ${newBackup.fileName}`);
 
       const blob = new Blob([jsonString], { type: 'application/json' });
@@ -1271,139 +985,76 @@ export const AuthProvider = ({ children }) => {
   };
 
   const restoreBackup = async (backupJsonData, expectedChecksum = '') => {
-    if (!permissions.canManageBackups) return { success: false, message: 'Only the VPAA can restore system data.' };
-    if (isFirebaseInitialized && rtdb && !isFirebaseConnected) {
-      return { success: false, message: 'Firebase is offline. Reconnect before restoring to prevent local and remote data from diverging.' };
-    }
-
+    if (!isCctAdminServiceEnabled) return { success: false, message: 'CCT snapshot imports require the secure restore service. Your export and existing data are available.' };
+    if (!permissions.canManageBackups) return { success: false, message: 'Only the CCT VPAA can restore CCT data.' };
+    if (!connectedRef.current) return { success: false, message: 'Reconnect before restoring CCT data.' };
+    const generation = sessionRef.current.generation;
     try {
       const rawJson = typeof backupJsonData === 'string' ? backupJsonData : JSON.stringify(backupJsonData);
-      if (expectedChecksum?.startsWith('sha256-')) {
-        const actualDigest = await sha256(rawJson);
-        if (actualDigest && `sha256-${actualDigest}` !== expectedChecksum) {
-          return { success: false, message: 'Snapshot checksum verification failed. The file may be incomplete or modified.' };
-        }
+      if (new Blob([rawJson]).size > 10 * 1024 * 1024) return { success: false, message: 'The CCT snapshot exceeds 10 MB.' };
+      if (expectedChecksum.startsWith('sha256-')) {
+        const digest = await sha256(rawJson);
+        if (!digest || 'sha256-' + digest !== expectedChecksum) return { success: false, message: 'CCT snapshot checksum verification failed.' };
       }
-      const parsed = typeof backupJsonData === 'string' ? JSON.parse(backupJsonData) : backupJsonData;
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return { success: false, message: 'The selected file is not a supported database snapshot.' };
-      }
-
-      const includesAccounts = hasOwn(parsed, 'accounts');
-      const includesRecords = hasOwn(parsed, 'records') || hasOwn(parsed, 'requests');
-      const includesAuditLogs = hasOwn(parsed, 'auditLogs');
-      const includesDepartments = hasOwn(parsed, 'departments');
-      const includesPrograms = hasOwn(parsed, 'programs');
-      const includesSubjects = hasOwn(parsed, 'subjectCatalog') || hasOwn(parsed, 'subjects');
-
-      if (![includesAccounts, includesRecords, includesAuditLogs, includesDepartments, includesPrograms, includesSubjects].some(Boolean)) {
-        return { success: false, message: 'No supported accounts, requests, records, departments, programs, subjects, or audit logs were found.' };
-      }
-
-      const nextAccounts = includesAccounts ? collectionToArray(parsed.accounts) : null;
-      const rawRecords = includesRecords
-        ? collectionToArray(hasOwn(parsed, 'records') ? parsed.records : parsed.requests)
-        : null;
-      const recordValidationError = includesRecords ? validateRecordCollection(rawRecords) : '';
-      if (recordValidationError) return { success: false, message: `Restore validation failed: ${recordValidationError}` };
-      const nextRecords = includesRecords ? normalizeRecordCollection(rawRecords) : null;
-      const nextAuditLogs = includesAuditLogs ? collectionToArray(parsed.auditLogs) : null;
-      const nextDepartmentItems = includesDepartments ? collectionToArray(parsed.departments) : null;
-      const nextDepartments = includesDepartments ? normalizeDepartmentCollection(nextDepartmentItems) : null;
-      const nextPrograms = includesPrograms ? collectionToArray(parsed.programs) : null;
-      const nextSubjects = includesSubjects
-        ? collectionToArray(hasOwn(parsed, 'subjectCatalog') ? parsed.subjectCatalog : parsed.subjects)
-        : null;
-
-      if (isFirebaseInitialized && rtdb) {
-        const updates = {};
-        if (includesAccounts) updates.accounts = nextAccounts.length ? collectionToMap(nextAccounts, 'usr') : null;
-        if (includesRecords) updates.requests = nextRecords.length ? collectionToMap(nextRecords, 'rec') : null;
-        if (includesAuditLogs) updates.auditLogs = nextAuditLogs.length ? collectionToMap(nextAuditLogs, 'log') : null;
-        if (includesDepartments) {
-          const departmentObjects = nextDepartmentItems.map((item, index) => typeof item === 'string'
-            ? { id: `dept_${index + 1}`, name: item }
-            : { ...item, id: item.id || `dept_${index + 1}`, name: item.name || item.value || item.id });
-          updates.departments = departmentObjects.length ? collectionToMap(departmentObjects, 'dept') : null;
-        }
-        if (includesPrograms) updates.programs = nextPrograms.length ? collectionToMap(nextPrograms, 'prog') : null;
-        if (includesSubjects) updates.subjects = nextSubjects.length ? collectionToMap(nextSubjects, 'subj') : null;
-        await rtdbUpdate(rtdbRef(rtdb), updates);
-      }
-
-      if (includesAccounts) setAccounts(nextAccounts);
-      if (includesRecords) setRecords(nextRecords);
-      if (includesAuditLogs) setAuditLogs(nextAuditLogs);
-      if (includesDepartments) setDepartments(nextDepartments);
-      if (includesPrograms) setPrograms(nextPrograms);
-      if (includesSubjects) setSubjectCatalog(nextSubjects);
-
-      addAuditLog('System Restore', `Restored supported snapshot collections at ${timestamp()}`);
-      return {
-        success: true,
-        message: `Database restore completed (${[
-          includesAccounts && 'accounts',
-          includesRecords && 'records',
-          includesDepartments && 'departments',
-          includesPrograms && 'programs',
-          includesSubjects && 'subjects',
-          includesAuditLogs && 'audit logs'
-        ].filter(Boolean).join(', ')}).`
-      };
+      const response = await httpsCallable(functions, 'restoreCctSnapshot', { timeout: 120000 })({ rawJson });
+      if (sessionRef.current.generation !== generation) return { success: false, message: 'Your CCT account session changed.' };
+      if (typeof response.data?.success !== 'boolean') return { success: false, message: 'The CCT restore service returned an incomplete response. Refresh before retrying.' };
+      return response.data;
     } catch (error) {
-      console.error('Restoration error:', error);
-      return { success: false, message: 'The backup file is invalid or Firebase rejected the restore operation.' };
+      return { success: false, message: ['functions/invalid-argument', 'functions/failed-precondition'].includes(error.code)
+        ? error.message : 'The CCT restore service could not complete this action. Please contact the CCT administrator.' };
     }
   };
 
-  const runBackgroundWrite = (label, task) => {
-    setDataSync((previous) => ({
-      ...previous,
-      status: isFirebaseConnected ? 'syncing' : 'offline',
-      pendingWrites: (previous.pendingWrites || 0) + 1,
-      error: ''
-    }));
-
-    Promise.resolve()
-      .then(task)
-      .then(() => {
-        setDataSync((previous) => ({
-          ...previous,
-          status: isFirebaseConnected ? 'live' : 'offline',
-          pendingWrites: Math.max(0, (previous.pendingWrites || 1) - 1),
-          lastSyncedAt: new Date().toISOString(),
-          error: ''
-        }));
-      })
-      .catch((error) => {
-        console.warn(`Background write failed (${label}):`, error);
-        setDataSync((previous) => ({
-          ...previous,
-          status: isFirebaseConnected ? 'error' : 'offline',
-          pendingWrites: Math.max(0, (previous.pendingWrites || 1) - 1),
-          error: error?.message || `${label} could not be synchronized.`
-        }));
+  const runCatalogMutation = async (label, task) => {
+    if (!isFirebaseInitialized || !rtdb) return { success: false, message: firebaseServiceError };
+    if (!connectedRef.current) return { success: false, message: 'Reconnect before changing the CCT directory. Your form stays open.' };
+    if (!['accounts','requests','departments','programs','subjects'].every((path) => dataSync.completedCollections.includes(path)) || (dataSync.error && dataSync.error !== catalogWriteErrorRef.current)) {
+      return { success: false, message: 'Wait for the CCT directory and its linked data to synchronize before changing it.' };
+    }
+    const generation = sessionRef.current.generation;
+    setDataSync((previous) => ({ ...previous, status: connectedRef.current ? 'syncing' : 'offline', pendingWrites: previous.pendingWrites + 1 }));
+    try {
+      const result = await task();
+      if (sessionRef.current.generation !== generation) return { success: false, message: 'Your CCT account session changed. Reopen the workspace.' };
+      const resolvedError = catalogWriteErrorRef.current;
+      catalogWriteErrorRef.current = '';
+      setDataSync((previous) => {
+        const error = previous.error === resolvedError ? '' : previous.error;
+        return { ...previous, error, status: error ? 'error' : connectedRef.current ? 'live' : 'offline', lastSyncedAt: new Date().toISOString() };
       });
+      return result;
+    } catch (error) {
+      const message = firebaseErrorMessage(error, 'save');
+      if (sessionRef.current.generation === generation) {
+        const syncError = label + ': ' + message;
+        catalogWriteErrorRef.current = syncError;
+        setDataSync((previous) => ({ ...previous, status: connectedRef.current ? 'error' : 'offline', error: syncError }));
+      }
+      return { success: false, message };
+    } finally {
+      if (sessionRef.current.generation === generation) setDataSync((previous) => ({ ...previous, pendingWrites: Math.max(0, previous.pendingWrites - 1) }));
+    }
   };
 
-  const addDepartment = (name) => {
+  const addDepartment = async (name) => {
     if (!permissions.isVPAA) return { success: false, message: 'Only the VPAA can create new departments.' };
-    const trimmed = name?.trim();
-    if (!trimmed) return { success: false, message: 'Department name cannot be empty.' };
+    const trimmed = String(name || '').trim();
+    if (!trimmed || trimmed.length > 160) return { success: false, message: 'Enter an academic unit name of 1–160 characters.' };
     if (departments.some((departmentName) => String(departmentName).toLowerCase() === trimmed.toLowerCase())) {
       return { success: false, message: 'This department already exists.' };
     }
 
-    const department = { id: `dept_${Date.now()}`, name: trimmed };
-    setDepartments((previous) => [...previous, trimmed]);
-    if (isFirebaseInitialized && rtdb) {
-      runBackgroundWrite('add department', () => rtdbSet(rtdbRef(rtdb, `departments/${department.id}`), department));
-    }
-    addAuditLog('Add Department', `VPAA created department: ${trimmed}`);
-    return { success: true, department: trimmed };
+    const result = await runCatalogMutation('Add academic unit', async () => {
+      const department = { id: rtdbPush(rtdbRef(rtdb, 'departments')).key, name: trimmed };
+      await rtdbSet(rtdbRef(rtdb, `departments/${department.id}`), department);
+      return { success: true, department: trimmed };
+    });
+    if (result.success) addAuditLog('Add Department', `VPAA created department: ${trimmed}`);
+    return result;
   };
 
-  const deleteDepartment = (name) => {
+  const deleteDepartment = async (name) => {
     if (!permissions.isVPAA) return { success: false, message: 'Only the VPAA can remove departments.' };
     const accountReference = accounts.some((account) => account.department === name);
     const recordReference = records.some((record) => record.department === name);
@@ -1422,29 +1073,24 @@ export const AuthProvider = ({ children }) => {
       };
     }
 
-    setDepartments((previous) => previous.filter((departmentName) => departmentName !== name));
-    if (isFirebaseInitialized && rtdb) {
-      runBackgroundWrite('remove department', async () => {
-        const snapshot = await rtdbGet(rtdbRef(rtdb, 'departments'));
-        if (!snapshot.exists()) return;
-        const value = snapshot.val();
-        const match = Object.entries(value || {}).find(([key, item]) => (
-          (typeof item === 'string' && item === name) || item?.name === name || item?.id === name || key === name
-        ));
-        if (match) await rtdbRemove(rtdbRef(rtdb, `departments/${match[0]}`));
-      });
-    }
-    addAuditLog('Remove Department', `VPAA removed department: ${name}`);
-    return { success: true };
+    const result = await runCatalogMutation('Remove academic unit', async () => {
+      const snapshot = await withFirebaseReadDeadline(() => rtdbGet(rtdbRef(rtdb, 'departments')));
+      const match = firebaseCollectionRows(snapshot.val(), { allowStrings: true }).find((item) => item.name === name || item.id === name);
+      if (!match) return { success: false, message: 'This academic unit no longer exists. Refresh the CCT directory.' };
+      await rtdbRemove(rtdbRef(rtdb, `departments/${match.id}`));
+      return { success: true };
+    });
+    if (result.success) addAuditLog('Remove Department', `VPAA removed department: ${name}`);
+    return result;
   };
 
-  const addProgram = ({ code, name, department }) => {
+  const addProgram = async ({ code, name, department } = {}) => {
     if (!permissions.isVPAA) return { success: false, message: 'Only the VPAA can add academic programs.' };
     const normalizedCode = String(code || '').trim().toUpperCase().replace(/\s+/g, ' ');
     const trimmedName = String(name || '').trim();
     const trimmedDepartment = String(department || '').trim();
-    if (!trimmedName || !trimmedDepartment) {
-      return { success: false, message: 'Program name and academic unit are required.' };
+    if (!normalizedCode || normalizedCode.length > 40 || !trimmedName || trimmedName.length > 160 || !trimmedDepartment) {
+      return { success: false, message: 'Enter a program code of 1–40 characters, a name of 1–160 characters, and an academic unit.' };
     }
     if (!departments.includes(trimmedDepartment)) {
       return { success: false, message: 'Select an academic unit that exists in the database.' };
@@ -1455,24 +1101,17 @@ export const AuthProvider = ({ children }) => {
     ));
     if (duplicate) return { success: false, message: 'This program name or code already exists in the selected academic unit.' };
 
-    const newProgram = {
-      id: `prog_${Date.now()}`,
-      code: normalizedCode,
-      name: trimmedName,
-      department: trimmedDepartment,
-      status: 'Active',
-      createdAt: timestamp(),
-      updatedAt: timestamp()
-    };
-    setPrograms((previous) => [...previous, newProgram]);
-    if (isFirebaseInitialized && rtdb) {
-      runBackgroundWrite('add program', () => rtdbSet(rtdbRef(rtdb, `programs/${newProgram.id}`), newProgram));
-    }
-    addAuditLog('Add Academic Program', `Added ${newProgram.code ? `${newProgram.code} - ` : ''}${newProgram.name} (${newProgram.department})`);
-    return { success: true, program: newProgram };
+    const result = await runCatalogMutation('Add program', async () => {
+      const newProgram = { id: rtdbPush(rtdbRef(rtdb, 'programs')).key, code: normalizedCode, name: trimmedName,
+        department: trimmedDepartment, status: 'Active', createdAt: timestamp(), updatedAt: timestamp() };
+      await rtdbSet(rtdbRef(rtdb, `programs/${newProgram.id}`), newProgram);
+      return { success: true, program: newProgram };
+    });
+    if (result.success) addAuditLog('Add Academic Program', `Added ${result.program.code} - ${result.program.name} (${result.program.department})`);
+    return result;
   };
 
-  const deleteProgram = (id) => {
+  const deleteProgram = async (id) => {
     if (!permissions.isVPAA) return { success: false, message: 'Only the VPAA can remove academic programs.' };
     const target = programs.find((program) => program.id === id);
     if (!target) return { success: false, message: 'Program not found.' };
@@ -1481,21 +1120,21 @@ export const AuthProvider = ({ children }) => {
       return { success: false, message: 'Remove or reassign the subjects linked to this program before deleting it.' };
     }
 
-    setPrograms((previous) => previous.filter((program) => program.id !== id));
-    if (isFirebaseInitialized && rtdb) {
-      runBackgroundWrite('remove program', () => rtdbRemove(rtdbRef(rtdb, `programs/${id}`)));
-    }
-    addAuditLog('Remove Academic Program', `Removed ${target.code ? `${target.code} - ` : ''}${target.name}`);
-    return { success: true };
+    const result = await runCatalogMutation('Remove program', async () => {
+      await rtdbRemove(rtdbRef(rtdb, `programs/${id}`));
+      return { success: true };
+    });
+    if (result.success) addAuditLog('Remove Academic Program', `Removed ${target.code ? `${target.code} - ` : ''}${target.name}`);
+    return result;
   };
 
-  const addSubjectToCatalog = ({ code, title, department, programId = '' }) => {
+  const addSubjectToCatalog = async ({ code, title, department, programId = '' } = {}) => {
     if (!permissions.isVPAA) return { success: false, message: 'Only the VPAA can add subjects to the catalog.' };
     const normalizedCode = String(code || '').trim().toUpperCase().replace(/\s+/g, ' ');
     const trimmedTitle = String(title || '').trim();
     const trimmedDepartment = String(department || '').trim();
-    if (!normalizedCode || !trimmedTitle || !trimmedDepartment) {
-      return { success: false, message: 'Subject code, title, and academic unit are required.' };
+    if (!normalizedCode || normalizedCode.length > 40 || !trimmedTitle || trimmedTitle.length > 250 || !trimmedDepartment) {
+      return { success: false, message: 'Enter a subject code of 1–40 characters, a title of 1–250 characters, and an academic unit.' };
     }
     if (!departments.includes(trimmedDepartment)) {
       return { success: false, message: 'Select an academic unit that exists in the database.' };
@@ -1511,39 +1150,31 @@ export const AuthProvider = ({ children }) => {
       && String(subject.code || '').trim().toUpperCase().replace(/\s+/g, ' ') === normalizedCode);
     if (duplicate) return { success: false, message: 'This subject code already exists in the selected program scope.' };
 
-    const newSubject = {
-      id: `subj_${Date.now()}`,
-      code: normalizedCode,
-      title: trimmedTitle,
-      department: trimmedDepartment,
-      programId: selectedProgram?.id || '',
-      programName: selectedProgram?.name || '',
-      createdAt: timestamp(),
-      updatedAt: timestamp()
-    };
-    setSubjectCatalog((previous) => [...previous, newSubject]);
-    if (isFirebaseInitialized && rtdb) {
-      runBackgroundWrite('add subject', () => rtdbSet(rtdbRef(rtdb, `subjects/${newSubject.id}`), newSubject));
-    }
-    addAuditLog(
-      'Add Subject/Course',
-      `Added ${newSubject.code} - ${newSubject.title} (${newSubject.programName || 'Department-wide'} / ${newSubject.department})`
-    );
-    return { success: true, subject: newSubject };
+    const result = await runCatalogMutation('Add subject', async () => {
+      const newSubject = { id: rtdbPush(rtdbRef(rtdb, 'subjects')).key, code: normalizedCode, title: trimmedTitle,
+        department: trimmedDepartment, programId: selectedProgram?.id || '', programName: selectedProgram?.name || '',
+        createdAt: timestamp(), updatedAt: timestamp() };
+      await rtdbSet(rtdbRef(rtdb, `subjects/${newSubject.id}`), newSubject);
+      return { success: true, subject: newSubject };
+    });
+    if (result.success) addAuditLog('Add Subject/Course', `Added ${result.subject.code} - ${result.subject.title} (${result.subject.programName || 'Department-wide'} / ${result.subject.department})`);
+    return result;
   };
 
-  const deleteSubjectFromCatalog = (id) => {
+  const deleteSubjectFromCatalog = async (id) => {
     if (!permissions.isVPAA) return { success: false, message: 'Only the VPAA can remove subjects.' };
     const target = subjectCatalog.find((subject) => subject.id === id);
     if (!target) return { success: false, message: 'Subject not found.' };
 
-    setSubjectCatalog((previous) => previous.filter((subject) => subject.id !== id));
-    if (isFirebaseInitialized && rtdb) {
-      runBackgroundWrite('remove subject', () => rtdbRemove(rtdbRef(rtdb, `subjects/${id}`)));
-    }
-    addAuditLog('Remove Subject/Course', `Removed subject ${target.code} - ${target.title}`);
-    return { success: true };
+    const result = await runCatalogMutation('Remove subject', async () => {
+      await rtdbRemove(rtdbRef(rtdb, `subjects/${id}`));
+      return { success: true };
+    });
+    if (result.success) addAuditLog('Remove Subject/Course', `Removed subject ${target.code} - ${target.title}`);
+    return result;
   };
+
+  const safeAction = (action, verb = 'save', requiredObject = '') => (...args) => firebaseOperationResult(() => action(...args), verb, requiredObject);
 
   return (
     <AuthContext.Provider
@@ -1559,42 +1190,38 @@ export const AuthProvider = ({ children }) => {
         programs,
         subjectCatalog,
         isFirebaseConnected,
+        firebaseReady: isFirebaseInitialized,
+        firebaseServiceError,
         isAuthResolving,
         dataSync,
         permissions,
+        adminServiceReady: isCctAdminServiceEnabled,
         inactivityNotice,
         clearInactivityNotice,
         loginWithEmail,
         logout,
-        addAccount,
-        updateAccount,
-        uploadAvatar,
-        toggleAccountStatus,
-        addDepartment,
-        deleteDepartment,
-        addProgram,
-        deleteProgram,
-        addSubjectToCatalog,
-        deleteSubjectFromCatalog,
-        addRecord,
-        updateRecord,
-        reviewRecord,
-        deleteRecord,
+        addAccount: safeAction(addAccount, 'save', 'account'),
+        updateAccount: safeAction(updateAccount, 'save', 'account'),
+        toggleAccountStatus: safeAction(toggleAccountStatus, 'save', 'account'),
+        addDepartment: safeAction(addDepartment),
+        deleteDepartment: safeAction(deleteDepartment, 'remove'),
+        addProgram: safeAction(addProgram, 'save', 'program'),
+        deleteProgram: safeAction(deleteProgram, 'remove'),
+        addSubjectToCatalog: safeAction(addSubjectToCatalog, 'save', 'subject'),
+        deleteSubjectFromCatalog: safeAction(deleteSubjectFromCatalog, 'remove'),
+        addRecord: safeAction(addRecord, 'save', 'record'),
+        updateRecord: safeAction(updateRecord, 'save', 'record'),
+        reviewRecord: safeAction(reviewRecord, 'save', 'record'),
+        deleteRecord: safeAction(deleteRecord, 'remove'),
         canEditRecord,
         canDeleteRecord,
         canApproveRecord,
-        createBackup,
-        restoreBackup,
+        createBackup: safeAction(createBackup, 'export', 'backup'),
+        restoreBackup: safeAction(restoreBackup, 'restore'),
         addAuditLog
       }}
     >
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within an AuthProvider');
-  return context;
 };

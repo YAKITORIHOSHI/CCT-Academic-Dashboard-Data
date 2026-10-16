@@ -27,6 +27,7 @@ export const CustomSelect = ({
   disabled = false,
   menuMinWidth = 0,
   menuMaxWidth = 480,
+  singleLine = false,
   ariaLabel
 }) => {
   const triggerRef = useRef(null);
@@ -40,7 +41,7 @@ export const CustomSelect = ({
   const normalizedOptions = useMemo(() => normalizeOptions(options), [options]);
   const selectedIndex = normalizedOptions.findIndex((option) => option.value === String(value ?? ''));
   const selectedOption = selectedIndex >= 0 ? normalizedOptions[selectedIndex] : null;
-  const displayLabel = selectedOption?.label || placeholder;
+  const displayLabel = selectedOption?.triggerLabel || selectedOption?.label || placeholder;
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -178,22 +179,24 @@ export const CustomSelect = ({
         disabled={disabled}
         onClick={() => setIsOpen((open) => !open)}
         onKeyDown={handleKeyDown}
-        className={`control-lift flex min-h-11 w-full items-center justify-between gap-2.5 rounded-xl border bg-white px-3.5 py-2.5 text-left text-xs font-semibold text-slate-900 transition-all outline-none focus:ring-2 dark:bg-slate-900 dark:text-slate-100 ${
+        className={`control-lift flex min-h-11 w-full items-center justify-between gap-2.5 rounded-xl border bg-white px-3.5 py-2.5 text-left text-sm font-semibold text-slate-900 transition-all outline-none focus:ring-2 dark:bg-slate-900 dark:text-slate-100 ${
           isOpen
-            ? 'border-sky-500/80 ring-2 ring-sky-500/20 shadow-md dark:border-sky-400/80 dark:ring-sky-400/20'
+            ? 'border-gold-500/80 ring-2 ring-gold-500/20 shadow-md dark:border-gold-400/80 dark:ring-gold-400/20'
             : 'border-slate-300 hover:border-slate-400 dark:border-slate-700/80 dark:hover:border-slate-600'
         } ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
         aria-label={ariaLabel}
+        aria-description={selectedOption?.triggerLabel ? selectedOption.label : undefined}
+        title={selectedOption?.triggerLabel ? selectedOption.label : undefined}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-controls={isOpen ? listboxId : undefined}
         aria-activedescendant={isOpen && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined}
       >
         <span className="flex min-w-0 items-center gap-2">
-          {Icon && <Icon className="h-4 w-4 shrink-0 text-sky-500" aria-hidden="true" />}
-          <span className="truncate">{displayLabel}</span>
+          {Icon && <Icon className="h-4 w-4 shrink-0 text-gold-500" aria-hidden="true" />}
+          <span className={`${singleLine ? 'truncate' : 'whitespace-normal break-words'} ${selectedOption ? '' : 'font-normal text-slate-500 dark:text-slate-400'}`}>{displayLabel}</span>
         </span>
-        <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-sky-500' : ''}`} aria-hidden="true" />
+        <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-gold-500' : ''}`} aria-hidden="true" />
       </button>
 
       {isOpen && typeof document !== 'undefined' && createPortal(
@@ -204,11 +207,11 @@ export const CustomSelect = ({
           aria-labelledby={ariaLabel ? undefined : triggerId}
           aria-label={ariaLabel}
           style={menuStyle}
-          className="dropdown-surface overflow-y-auto overscroll-contain rounded-2xl border border-sky-950/30 bg-white/98 p-1.5 shadow-2xl backdrop-blur-xl dark:border-sky-900/60 dark:bg-slate-900/98"
+          className="dropdown-surface overflow-y-auto overscroll-contain rounded-2xl border border-gold-950/30 bg-white/98 p-1.5 shadow-2xl backdrop-blur-xl dark:border-gold-900/60 dark:bg-slate-900/98"
           onKeyDown={handleKeyDown}
         >
           {normalizedOptions.length === 0 ? (
-            <div className="px-3 py-3 text-center text-xs text-slate-400">No options available</div>
+            <div className="px-3 py-3 text-center text-sm text-slate-500 dark:text-slate-400">No options available</div>
           ) : normalizedOptions.map((option, index) => {
             const isSelected = option.value === String(value ?? '');
             const isActive = index === activeIndex;
@@ -223,16 +226,16 @@ export const CustomSelect = ({
                 aria-selected={isSelected}
                 onPointerMove={() => setActiveIndex(index)}
                 onClick={() => selectOption(option)}
-                className={`menu-option flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition-all ${
+                className={`menu-option flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${
                   isSelected
-                    ? 'bg-sky-500/15 font-bold text-sky-700 dark:bg-sky-950/70 dark:text-sky-300'
+                    ? 'bg-gold-500/15 font-bold text-gold-700 dark:bg-gold-950/70 dark:text-gold-300'
                     : isActive
                       ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white'
                       : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800/70'
                 }`}
               >
-                <span className="truncate pr-2">{option.label}</span>
-                {isSelected && <Check className="h-4 w-4 shrink-0 text-sky-500" aria-hidden="true" />}
+                <span className="whitespace-normal break-words pr-2">{option.label}</span>
+                {isSelected && <Check className="h-4 w-4 shrink-0 text-gold-500" aria-hidden="true" />}
               </button>
             );
           })}

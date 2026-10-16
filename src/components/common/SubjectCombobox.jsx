@@ -156,7 +156,7 @@ export const SubjectCombobox = ({
 
   return (
     <div className="relative">
-      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+      <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" aria-hidden="true" />
       <input
         ref={inputRef}
         type="text"
@@ -171,7 +171,7 @@ export const SubjectCombobox = ({
         }}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="form-control pl-10 pr-10 font-mono uppercase"
+        className="form-control pl-10 pr-10 font-mono "
         role="combobox"
         aria-label={ariaLabel}
         aria-autocomplete="list"
@@ -179,7 +179,7 @@ export const SubjectCombobox = ({
         aria-controls={open ? listboxId : undefined}
         aria-activedescendant={open && filteredSubjects[activeIndex] ? `${listboxId}-option-${activeIndex}` : undefined}
       />
-      <BookOpen className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-sky-500" aria-hidden="true" />
+      <BookOpen className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gold-500" aria-hidden="true" />
 
       {open && typeof document !== 'undefined' && createPortal(
         <div
@@ -188,10 +188,10 @@ export const SubjectCombobox = ({
           role="listbox"
           aria-label="Available subjects"
           style={menuStyle}
-          className="dropdown-surface overflow-y-auto overscroll-contain rounded-2xl border border-sky-950/30 bg-white/98 p-1.5 shadow-2xl backdrop-blur-xl dark:border-sky-900/60 dark:bg-slate-900/98"
+          className="dropdown-surface overflow-y-auto overscroll-contain rounded-2xl border border-gold-950/30 bg-white/98 p-1.5 shadow-2xl backdrop-blur-xl dark:border-gold-900/60 dark:bg-slate-900/98"
         >
           {filteredSubjects.length === 0 ? (
-            <div className="px-3 py-4 text-center text-xs text-slate-400">No matching subject in the selected academic unit.</div>
+            <div className="px-3 py-4 text-center text-sm text-slate-500 dark:text-slate-400">No matching subject in the selected academic unit.</div>
           ) : filteredSubjects.map((subject, index) => {
             const selected = String(subject.code || '').trim().toLowerCase() === exactCode;
             const active = index === activeIndex;
@@ -208,18 +208,18 @@ export const SubjectCombobox = ({
                 onClick={() => chooseSubject(subject)}
                 className={`menu-option flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left transition ${
                   selected
-                    ? 'bg-sky-500/15 font-bold text-sky-700 dark:bg-sky-950/70 dark:text-sky-300'
+                    ? 'bg-gold-500/15 font-bold text-gold-700 dark:bg-gold-950/70 dark:text-gold-300'
                     : active
                       ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white'
                       : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800/70'
                 }`}
               >
-                <span className="min-w-[5rem] shrink-0 font-mono text-xs font-black">{subject.code}</span>
+                <span className="min-w-[5rem] shrink-0 font-mono text-sm font-semibold">{subject.code}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-bold">{subject.title}</span>
-                  <span className="mt-0.5 block truncate text-[10px] text-slate-500 dark:text-slate-400">{subject.programName || 'Department-wide'} · {subject.department}</span>
+                  <span className="block truncate text-sm font-bold">{subject.title}</span>
+                  <span className="mt-0.5 block truncate text-xs text-slate-500 dark:text-slate-400">{subject.programName || 'Department-wide'} · {subject.department}</span>
                 </span>
-                {selected && <Check className="mt-0.5 h-4 w-4 shrink-0 text-sky-500" aria-hidden="true" />}
+                {selected && <Check className="mt-0.5 h-4 w-4 shrink-0 text-gold-500" aria-hidden="true" />}
               </button>
             );
           })}
