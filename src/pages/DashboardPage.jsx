@@ -3,6 +3,7 @@ import { ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, GraduationCap, 
 import { useAuth } from '../context/auth';
 import { useAcademicData } from '../context/academicData';
 import { AggregateChart } from '../components/common/AggregateChart';
+import { TrendChart } from '../components/common/AcademicCharts';
 import { StatCard } from '../components/common/StatCard';
 import { CustomSelect } from '../components/common/CustomSelect';
 import { RECORD_STATUS } from '../utils/academic';
@@ -43,6 +44,9 @@ export const DashboardPage = ({ setActiveTab }) => {
     label: ['Passed','Failed','Dropped','Incomplete'][index], value: summary.approved.reduce((sum,row) => sum + Number(row[field] || 0), 0)
   }));
   const annual = annualReports.find((report) => report.academicYear === activeYear);
+  const annualTotal = annual?.total !== null && annual?.total !== undefined && annual?.total !== '' && Number.isFinite(Number(annual?.total)) && Number(annual.total) >= 0 ? Number(annual.total) : null;
+  const annualTrend = useMemo(() => [...annualReports].sort((a, b) => String(a.academicYear).localeCompare(String(b.academicYear)))
+    .map((report) => ({ label: report.academicYear, value: report.total })), [annualReports]);
   const topcitAnnual = topcit.find((report) => report.academicYear === activeYear);
   const recent = useMemo(() => [...scopedRecords].sort((a,b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))).slice(0,4), [scopedRecords]);
   const actionLabel = permissions.isPresident ? 'View Reports' : permissions.isHead ? 'Encode a Record' : 'Review Records';
@@ -87,13 +91,13 @@ export const DashboardPage = ({ setActiveTab }) => {
         <StatCard title={permissions.isVPAA ? 'Active CCT Personnel' : 'My CCT Account'} value={permissions.isVPAA ? activePeople : currentUser?.status || 'Active'} subtitle={permissions.isVPAA ? 'Across City College of Tagaytay' : 'Your verified CCT access'} icon={Users} color="violet" />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-2">
-        <AggregateChart title="CCT Academic Outcomes" description="Aggregate subject outcomes from approved records. These are course enrollments, not unique student headcounts." items={outcomes} hasData={summary.approved.length > 0} />
-        <AggregateChart title="CCT TOPCIT Achieved Levels" description={topcitAnnual ? topcitAnnual.total + ' participants · ' + activeYear : 'Annual participant totals and certificate levels appear after the CCT summary is submitted.'} hasData={Boolean(topcitAnnual)} items={[1,2,3,4,5].map((level) => ({label:'Level '+level,value:Number(topcitAnnual?.['level'+level] || 0)}))} />
+      <section className="grid min-w-0 gap-6 xl:grid-cols-2">
+        <AggregateChart title="CCT Academic Outcomes" description="Aggregate subject outcomes from approved records. These are course enrollments, not unique student headcounts." valueLabel="Course outcomes" items={outcomes} hasData={summary.approved.length > 0} />
+        <AggregateChart variant="bar" title="CCT TOPCIT Achieved Levels" description={topcitAnnual ? topcitAnnual.total + ' participants · ' + activeYear : 'Annual participant totals and certificate levels appear after the CCT summary is submitted.'} valueLabel="Participants" hasData={Boolean(topcitAnnual)} items={[1,2,3,4,5].map((level) => ({label:'Level '+level,value:Number(topcitAnnual?.['level'+level] || 0)}))} />
       </section>
-      <section className="surface-panel p-6 flex flex-wrap items-center justify-between gap-4">
-        <div><h2 className="section-heading">CCT Annual Student Enrollment</h2><p className="muted-copy mt-1">{annual ? annual.total.toLocaleString() + ' students · ' + activeYear : 'No college-wide annual report submitted for this Academic Year.'}</p></div>
-        <button className="control-lift" onClick={() => setActiveTab('annualReports')}>View Annual Reports</button>
+      <section className="space-y-3">
+        <TrendChart title="CCT Annual Student Enrollment" description={`${annualTotal !== null ? annualTotal.toLocaleString() + ' students · ' + activeYear + '. ' : 'No numeric annual total is available for the selected Academic Year. '}The line shows all reported Academic Years; each point is a separate annual headcount.`} data={annualTrend} valueLabel="Students" hasData={annualReports.length > 0} empty="Annual enrollment will appear after a college-wide report is submitted." />
+        <div className="flex justify-end"><button type="button" className="control-lift inline-flex items-center gap-2" onClick={() => setActiveTab('annualReports')}>View Annual Reports<ArrowRight className="h-4 w-4" aria-hidden="true" /></button></div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">

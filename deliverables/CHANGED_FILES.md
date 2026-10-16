@@ -1,5 +1,18 @@
 # Complete CCT source and changed-file list
 
+## Animated charts and scrollbar refinement — 17 October 2026
+
+- `src/components/common/AcademicCharts.jsx` and `AggregateChart.jsx`: reusable circular distributions, columns with SVG depth, and annual line charts. Readable legends retain full counts; missing figures stay absent, submitted zeros remain zero, and single-year series are labelled. Entry animation respects both the OS and saved reduced-motion preference.
+- `src/pages/DashboardPage.jsx` and `AcademicWorkspacePage.jsx`: use circular academic/year-level distributions, vertical TOPCIT levels and real annual enrollment/participation trends. Annual student headcounts remain distinct from course enrollments, and no historical figures are invented.
+- `src/pages/ReportsPage.jsx`: match the overview's headings, cards and spacing; label report filters; show all four outcomes and an annual trend within the existing approved-record and school permissions. The trend explicitly spans years independently of the selected report year. CSV export, printing and record detail retain their scope.
+- `src/index.css` and `src/neumorphism.css`: resolve Chromium's standard/custom scrollbar conflict, remove scrollbar arrow buttons, add slim rounded thumbs, retain native forced-color controls, and refine dropdown edge and action-icon spacing. Independent navigation scrolling is preserved.
+
+The preceding navigation fix and all-account repair remain included. Firebase configuration, environments, access rules, accounts, production data and prepared Functions are preserved.
+
+Validation: `npm run check` passes with zero lint warnings, and all 39 unit tests pass. Temporary rendering and geometry checks covered populated/empty/zero charts, annual gaps, one-year series, column dimensions, reduced-motion combinations and exclusion of depth layers from tooltips. Report fixtures excluded pending and other-school records; an overview fixture preserved a missing annual total as a gap and a submitted zero as zero. Interactive browser verification for this revision remains unavailable because local browser use is disabled in Work settings; these checks do not substitute for visual confirmation. The prior backend emulator suites were not rerun for this presentation-only change.
+
+The refreshed source release is `CCT_Academic_Management_System_Charts_2026-10-17.zip`, with per-file SHA-256 hashes and encrypted `.env.enc`. Its release notes record the current Hosting result. Private keys, plaintext environments, local verification artifacts, diagnostic logs, dependencies and generated build output are excluded.
+
 ## Navigation and modal scrolling fix — 17 October 2026
 
 - `src/components/layout/Sidebar.jsx`, `src/index.css`, and `src/neumorphism.css`: constrain the desktop sidebar to the visible viewport below the header, retain its position during page scrolling, and give links, approval status and footer an independent scroll area. The mobile drawer fills the viewport, keeps its profile above the scroll area, and closes when the desktop breakpoint is reached. Conflicting height, overflow, hiding and spacing rules were removed.

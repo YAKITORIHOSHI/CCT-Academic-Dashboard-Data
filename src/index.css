@@ -193,40 +193,59 @@ html.dark body {
   color: #ffffff;
 }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb, #8b9793) transparent;
-}
+/* Retain native high-contrast scrollbars and native scrolling in every container. */
+@media (forced-colors: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb, #8b9793) transparent;
+  }
 
-::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
-}
+  @supports selector(::-webkit-scrollbar) {
+    /* Non-auto standard properties override these pseudo-elements in Chromium. */
+    * {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
 
-::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: var(--scrollbar-thumb, #8b9793);
-  background-clip: padding-box;
-}
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover, #667570);
-  background-clip: padding-box;
-}
+    ::-webkit-scrollbar-track:vertical {
+      margin-block: 6px;
+    }
 
-html.dark ::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb, #71837d);
-  background-clip: padding-box;
-}
+    ::-webkit-scrollbar-track:horizontal {
+      margin-inline: 6px;
+    }
 
-html.dark ::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover, #96a69f);
-  background-clip: padding-box;
+    ::-webkit-scrollbar-thumb {
+      min-height: 28px;
+      min-width: 28px;
+      border: 2px solid transparent;
+      border-radius: 999px;
+      background: var(--scrollbar-thumb, #8b9793);
+      background-clip: padding-box;
+    }
+
+    ::-webkit-scrollbar-thumb:hover,
+    ::-webkit-scrollbar-thumb:active {
+      background: var(--scrollbar-thumb-hover, #667570);
+      background-clip: padding-box;
+    }
+
+    ::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+  }
 }
 
 button,
@@ -1122,6 +1141,7 @@ body {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  scroll-padding-block: 0.5rem;
 }
 
 .mobile-sheet-backdrop {

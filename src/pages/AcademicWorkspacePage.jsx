@@ -9,6 +9,7 @@ import { CustomSelect } from '../components/common/CustomSelect';
 import { Modal } from '../components/common/Modal';
 import { ConfirmDialog, Toast } from '../components/common/Feedback';
 import { AggregateChart } from '../components/common/AggregateChart';
+import { TrendChart } from '../components/common/AcademicCharts';
 import { firebaseErrorMessage } from '../services/firebaseSafety';
 
 const screens = {
@@ -95,6 +96,8 @@ export function AcademicWorkspacePage({ module }) {
   const selectedAnnual = filtered[0];
   const summaryPrefix = module === 'annualReports' ? 'year' : 'level';
   const summaryCounts = [1,2,3,4,5].map((i) => ({ label: module === 'annualReports' ? YEAR_LEVELS[i-1] : `Level ${i}`, value: filtered.reduce((sum, row) => sum + Number(row[summaryPrefix+i] || 0), 0) }));
+  const annualTrend = GLOBAL_COLLECTIONS.includes(module) ? [...filtered].sort((a,b) => String(a.academicYear).localeCompare(String(b.academicYear)))
+    .map((row) => ({ label: row.academicYear, value: row.total })) : [];
   const selectedSectionOptions = data.sections.filter((section) => (year === 'ALL' || section.academicYear === year) && (school === 'ALL' || section.department === school)).map((section) => ({ value: section.id, label: `${section.name} · ${section.academicYear} · ${section.department}` }));
   const col = editor?.collection;
   const formStudents = data.students.filter((student) => student.department === form.department);
@@ -122,8 +125,9 @@ export function AcademicWorkspacePage({ module }) {
       {module === 'retention' && canWrite && <button className="control-lift" onClick={() => open('sections')}>Manage / Add Section</button>}
     </section>
     {GLOBAL_COLLECTIONS.includes(module) && <>
-      <section className="grid gap-6 lg:grid-cols-[1fr_1.5fr]"><article className="surface-panel p-6"><p className="muted-copy">{module === 'annualReports' ? 'Reported Student Enrollment' : 'Students Who Took TOPCIT'}</p><p className="metric-value text-4xl font-semibold mt-3">{summaryCounts.reduce((sum,item) => sum+item.value,0).toLocaleString()}</p><p className="muted-copy mt-3">{year === 'ALL' ? 'Across selected annual submissions. A student can appear in multiple Academic Years.' : year}</p></article>
-        <AggregateChart hasData={filtered.length > 0} title={module === 'annualReports' ? 'Student Enrollment by Year Level' : 'TOPCIT Achieved Levels'} description={module === 'annualReports' ? 'One annual report per Academic Year. The total is calculated from these counts.' : 'Use the achieved level printed on each student’s TOPCIT certificate; count each participant once in the annual summary.'} items={module === 'annualReports' && yearLevel !== 'ALL' ? summaryCounts.filter((_,i) => String(i+1) === yearLevel) : summaryCounts} />
+      <section className="grid min-w-0 gap-6 xl:grid-cols-2">
+        <TrendChart title={module === 'annualReports' ? 'Annual Student Enrollment' : 'Annual TOPCIT Participation'} description={`${year === 'ALL' ? 'Reported Academic Years' : year} · ${summaryCounts.reduce((sum,item) => sum+item.value,0).toLocaleString()} ${module === 'annualReports' ? 'reported enrollments' : 'participants'}. Each point is a separate annual total; a student can appear in multiple years.`} data={annualTrend} valueLabel={module === 'annualReports' ? 'Students' : 'Participants'} hasData={filtered.length > 0} />
+        <AggregateChart variant={module === 'annualReports' ? 'donut' : 'bar'} valueLabel={module === 'annualReports' ? 'Students' : 'Participants'} hasData={filtered.length > 0} title={module === 'annualReports' ? 'Student Enrollment by Year Level' : 'TOPCIT Achieved Levels'} description={module === 'annualReports' ? 'One annual report per Academic Year. The total is calculated from these counts.' : 'Use the achieved level printed on each student’s TOPCIT certificate; count each participant once in the annual summary.'} items={module === 'annualReports' && yearLevel !== 'ALL' ? summaryCounts.filter((_,i) => String(i+1) === yearLevel) : summaryCounts} />
       </section>
       {module === 'annualReports' && selectedAnnual && <p className="muted-copy">{yearLevel === 'ALL' ? 'All year levels' : YEAR_LEVELS[Number(yearLevel)-1]}: {summaryCounts.filter((_,i) => yearLevel === 'ALL' || String(i+1) === yearLevel).reduce((sum,item) => sum+item.value,0).toLocaleString()} students. College-wide total: {summaryCounts.reduce((sum,item) => sum+item.value,0).toLocaleString()}.</p>}
     </>}
