@@ -94,7 +94,7 @@ The generated Firebase Hosting hash cache is local tooling data and is excluded.
 
 ## Deployment
 
-The current Hosting target is https://academicdashboarddata.web.app. The local switch does not deploy this project or migrate users/data. Earlier deployment and UI-verification notes below describe the previous environment. Server failure handling remains prepared and emulator-tested; the exact TF graph remains unverified.
+The current Hosting release is https://academicdashboarddata.web.app, deployed with database rules on 16 October 2026. Live HTML, entry assets, CSP/cache headers, and rules match this build; existing data and four access mappings were preserved. Cloud Functions were excluded from this deployment. Earlier deployment and UI-verification notes below describe the previous environment. The exact TF graph remains unverified.
 
 Homepage/SPA cache and fingerprinted-asset policies were verified. Firebase regional long polling is allowed by the CSP. Hosted Chrome authentication passed in the preceding UI verification; the embedded browser intermittently aborted Google Auth requests.
 
@@ -151,3 +151,11 @@ The user selected `academicdashboarddata` and measurement ID `G-3VR70C544M` as t
 Updated `.firebaserc`, explicit deployment commands, the trusted access-migration target, Hosting CSP, `.env.example`, `.env.local`, and current documentation. The encrypted environment backup and complete source archive were refreshed. Plaintext environments and the external private key remain excluded from the archive. Local emulator tests continue to use isolated demo projects.
 
 Validation: build and lint pass even with deliberately conflicting Firebase project/key environment overrides; the resulting bundle contains only the required project configuration. All 36 unit tests pass, including mismatched-app rejection and unsupported/failing Analytics. No cloud deployment, data migration, account provisioning, or production policy verification was performed by this switch.
+
+## GitHub and Firebase publication — 16 October 2026
+
+Reconciled the newer GitHub commit before publication, preserving compatible select/dropdown positioning, modal spacing, touch-target and safe-area improvements, and removal of the unused App.css file. The required Firebase identity, CCT interface, initials-based accounts, shared preferences, and current access controls take precedence over superseded integrations/configuration. Firebase's local Hosting hash cache is no longer tracked.
+
+Deployed Hosting and database rules explicitly to `academicdashboarddata`. Hosting version `0d94d920fc027492` serves the matching build and security headers. Rules match `database.rules.json`; all four pre-existing access mappings are intact. Pre-deployment rules were backed up privately outside the repository. Cloud Functions, Auth users/policies, billing, and database contents were not changed by the deployment.
+
+Validation: build/lint, 36 unit tests, 23 security emulator tests, and 4 concurrency tests pass (63 tests total). Published HTML and six entry/preloaded assets match the local build byte for byte. Git and source-archive checks exclude plaintext environments, external private keys, diagnostic logs, dependencies, and build output; `.env.enc` remains the only distributed environment backup.

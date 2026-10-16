@@ -4,7 +4,11 @@ The CCT Firebase project is `academicdashboarddata`. Active CCT emails use `@col
 
 The user selected this project on 2026-10-16. SDK identity is pinned in `src/firebase/config.js`, existing apps with a mismatched project/database/app ID are rejected, and deploy commands explicitly target `academicdashboarddata`. Analytics uses measurement ID `G-3VR70C544M` with a browser-support guard. The Hosting CSP permits the Google tag and Analytics transport endpoints described in [Google's CSP guidance](https://developers.google.com/tag-platform/security/guides/csp).
 
-This local project switch does not migrate Auth users/data, provision administrator access, or deploy configuration. Live rules, Auth policy, authorized domains, billing status, App Check, Analytics delivery, and Hosting in this project remain unverified by this change. Earlier deployment results below refer to the previous environment. `database.rules.json` and `security/auth-policy.json` remain the intended policies to deploy/verify for this project.
+Hosting and database rules were deployed to `academicdashboarddata` on 2026-10-16 after the user's publication request. Live HTML, entry assets, CSP/cache headers, and database rules match the local source/build. Four existing access mappings were preserved; pre-deployment rules were also backed up outside the repository. Hosting version: `0d94d920fc027492`.
+
+This deployment did not migrate Auth users/data, provision administrator access, alter Auth policy/authorized domains/billing/App Check, or deploy Cloud Functions. Analytics event delivery and the policy recorded in `security/auth-policy.json` remain unverified in this project. Earlier deployment results below refer to the previous environment.
+
+Firebase CLI diagnostics can contain credentials: clear inherited `DEBUG` for CLI commands, never print unfiltered account-list JSON or process environments, and exclude all diagnostic logs from source releases. Current validation: 36 unit tests, 23 rule/server emulator tests, and 4 concurrency tests pass; build and lint pass.
 
 Environment release backups use authenticated AES-256-GCM with a random 256-bit key stored outside the project. See [release backup and recovery](security/RELEASE_ENV.md). The hidden attribute is only a display preference; the separate key provides confidentiality. Encryption of files cannot conceal values compiled into browser JavaScript.
 
