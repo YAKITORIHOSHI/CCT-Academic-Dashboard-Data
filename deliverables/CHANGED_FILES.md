@@ -1,5 +1,18 @@
 # Complete CCT source and changed-file list
 
+## All-account login repair — 17 October 2026
+
+- `src/context/AuthContext.jsx`: keep explicit sign-in forms mounted during directory verification, display missing-access failures, prevent duplicate attempts, and clean up only the failed attempt's session.
+- `functions/scripts/cli-credential.mjs`: refresh the explicitly selected authorized CLI account using form-encoded OAuth requests, with in-memory caching and sanitized failures.
+- `functions/accessMigration.js`: reconcile verified account UIDs and known record owners without mutating the input snapshot, expanding roles, reactivating suspended access, or guessing ambiguous owners.
+- `functions/scripts/migrate-access.mjs`: use the credential bridge, reject missing catalog schools, and apply the tested reconciliation helper under the existing ETag guard.
+- `tests/access-migration.test.js` and `package.json`: three meaningful reconciliation regressions; 39 unit tests now pass.
+- `README.md` and `SECURITY.md`: current applied repair and deployment status.
+
+All nine existing Auth accounts have matching profile UIDs and access mappings. The user confirmed the incomplete Arts and Science account's Active Dean role. Its school is present in the catalog, and Computer Studies matches the existing catalog label. Five known record owners were reconciled with advancing revisions; one unverifiable legacy owner was preserved. All grades, approvals, record counts, unrelated collections, historical access entries and audit history were retained. Encrypted backups and keys are outside this repository.
+
+Build/lint, 39 unit tests, 23 security tests, and four concurrency tests pass. The concurrency suite used an alternate local demo emulator port because the default was occupied. Hosting-only version `7e998297a5842dfc` is live, and an actual VPAA sign-in and session restoration were verified. Passwords, SDK configuration, environment files, rules and prepared Functions were preserved. Source ZIPs include the current source and encrypted environment backup, excluding local account-audit artifacts, logs, plaintext environments and keys.
+
 The archive contains complete current files, not patches or snippets. Files are ordered by path; removed files are explicitly identified. Existing unrelated source/assets are retained.
 
 Setup: `npm ci`, then `npm run dev`. Prepared server services use `npm ci --prefix functions`. Billing and privileged service flags remain disabled.

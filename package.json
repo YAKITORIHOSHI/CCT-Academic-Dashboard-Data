@@ -16,7 +16,7 @@
     "env:verify": "node security/env-vault.mjs verify",
     "env:restore": "node security/env-vault.mjs restore",
     "check": "npm run lint && npm run build",
-    "test": "node --test tests/cache.test.js tests/record-concurrency.test.js tests/security-validation.test.js tests/academic-modules.test.js tests/firebase-safety.test.js tests/env-vault.test.js",
+    "test": "node --test tests/cache.test.js tests/record-concurrency.test.js tests/security-validation.test.js tests/academic-modules.test.js tests/firebase-safety.test.js tests/env-vault.test.js tests/access-migration.test.js",
     "test:security": "firebase emulators:exec --only database,auth --project demo-cct-security --config firebase.security.json \"node --test --test-concurrency=1 tests/firebase-security.test.js tests/server-security.test.js\"",
     "test:concurrency": "firebase emulators:exec --only database --project demo-cct-concurrency --config tests/firebase.emulator.json \"node --test tests/firebase-concurrency.test.js\""
   },

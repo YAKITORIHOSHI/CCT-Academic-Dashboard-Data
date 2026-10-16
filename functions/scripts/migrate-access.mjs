@@ -1,8 +1,8 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
 import { isSafeKey, ROLES } from '../validation.js';
+import { createCliCredential } from './cli-credential.mjs';
+import { applyVerifiedAccessMappings } from '../accessMigration.js';
 
 const args = process.argv.slice(2);
 const argument = (name) => args[args.indexOf(name) + 1];
@@ -11,16 +11,7 @@ if (!args.includes('--project') || projectId !== 'academicdashboarddata') throw 
 const options = { projectId, databaseURL: 'https://academicdashboarddata-default-rtdb.asia-southeast1.firebasedatabase.app' };
 // Optional bridge to an explicitly selected, already-authorized Firebase CLI account. Tokens stay in memory.
 if (args.includes('--cli-path') && args.includes('--cli-account')) {
-  const require = createRequire(import.meta.url);
-  const cliAuth = require(join(argument('--cli-path'), 'lib/auth.js'));
-  const cliApi = require(join(argument('--cli-path'), 'lib/api.js'));
-  cliApi.setScopes(['https://www.googleapis.com/auth/cloud-platform']);
-  const account = cliAuth.findAccountByEmail(argument('--cli-account'));
-  if (!account) throw new Error('Sign in to the selected Firebase CLI account first.');
-  options.credential = { async getAccessToken() {
-    const token = await cliAuth.getAccessToken(account.tokens.refresh_token, cliApi.getScopes());
-    return { access_token: token.access_token, expires_in: Math.max(60, Math.floor((token.expires_at - Date.now()) / 1000)) };
-  } };
+  options.credential = createCliCredential(argument('--cli-path'), argument('--cli-account'));
 }
 const app = initializeApp(options);
 const rest = async (path, init = {}) => {
@@ -34,6 +25,8 @@ const rest = async (path, init = {}) => {
 };
 const authentication = getAuth(app);
 const directory = await (await rest('/accounts')).json() || {};
+const departments = await (await rest('/departments')).json() || {};
+const schoolNames = new Set(Object.values(departments).map((school) => typeof school === 'string' ? school : school?.name).filter(Boolean));
 const emailChanges = [];
 if (args.includes('--migrate-emails')) {
   for (const [id, profile] of Object.entries(directory)) {
@@ -51,6 +44,9 @@ const unresolved = [];
 for (const [id, account] of Object.entries(directory)) {
   if (!isSafeKey(id) || !ROLES.includes(account.role) || !['Active', 'Suspended'].includes(account.status) || !account.department || !account.email) {
     unresolved.push({ id, reason: 'Incomplete CCT directory profile' }); continue;
+  }
+  if (['Deans', 'Heads'].includes(account.role) && !schoolNames.has(account.department)) {
+    unresolved.push({ id, reason: 'Assigned CCT school is missing from the department directory' }); continue;
   }
   try {
     let user;
@@ -78,23 +74,11 @@ if (args.includes('--apply')) {
     currentDirectory[change.id].email = change.next;
   }
   if (!current || JSON.stringify(currentDirectory) !== JSON.stringify(directory)) throw new Error('CCT directory changed. Rerun the dry run.');
-    const next = { ...current, access: { ...current.access, ...mappings }, accounts: { ...current.accounts }, requests: { ...current.requests } };
+    const next = applyVerifiedAccessMappings(current, mappings, directory);
     for (const change of emailChanges) {
       const uid = byAccountId[change.id];
       if (uid) await authentication.updateUser(uid, { email: change.next });
       next.accounts[change.id] = { ...next.accounts[change.id], email: change.next };
-    }
-    for (const [uid, access] of Object.entries(mappings)) next.accounts[access.accountId] = { ...next.accounts[access.accountId], uid, status: access.status };
-    for (const [id, record] of Object.entries(current.requests || {})) {
-      let uid = byAccountId[record.encodedById];
-      if (!record.encodedById && !record.encodedByUid) {
-        // One-time owner migration only: require exactly one verified profile with the same legacy name AND department.
-        // Runtime permissions never use display names.
-        const candidates = Object.entries(directory).filter(([accountId, profile]) => byAccountId[accountId]
-          && profile.name === record.encodedBy && profile.department === record.department);
-        if (candidates.length === 1) uid = byAccountId[candidates[0][0]];
-      }
-      if (!record.encodedByUid && uid) next.requests[id] = { ...record, encodedByUid: uid };
     }
   await rest('/', { method: 'PUT', headers: { 'if-match': response.headers.get('etag') }, body: JSON.stringify(next) });
   console.log('Verified CCT access mappings applied atomically. Existing records and account IDs were preserved.');

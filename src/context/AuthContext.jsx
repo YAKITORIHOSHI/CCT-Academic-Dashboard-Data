@@ -32,6 +32,7 @@ import {
 
 const DATA_VERSION = '8.0-city-college-of-tagaytay';
 const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+const ACCOUNT_ACCESS_ERROR = 'Your sign-in was accepted, but this account has no active CCT access profile. Contact the CCT administrator to restore your account access.';
 const timestamp = () => new Date().toISOString().replace('T', ' ').substring(0, 19);
 
 const updateKeepSignedInPreference = (keepSignedIn) => {
@@ -109,6 +110,7 @@ export const AuthProvider = ({ children }) => {
   connectedRef.current = isFirebaseConnected;
   const collectionsReadyRef = useRef(false);
   const directoryRequestRef = useRef(null);
+  const signInAttemptRef = useRef(false);
   const catalogWriteErrorRef = useRef('');
 
   const resetSessionData = () => {
@@ -284,7 +286,8 @@ export const AuthProvider = ({ children }) => {
         return;
       }
 
-      setIsAuthResolving(true);
+      // Keep the submitted form mounted so its result and inputs survive verification.
+      if (!signInAttemptRef.current) setIsAuthResolving(true);
       try {
         const { list, matched } = await getAccountDirectory(firebaseUser.uid);
         if (disposed || generation !== authGeneration || auth.currentUser?.uid !== firebaseUser.uid) return;
@@ -294,6 +297,7 @@ export const AuthProvider = ({ children }) => {
         if (!matched || matched.status === 'Suspended') {
           setIsAuthenticated(false);
           setCurrentUser(null);
+          if (!signInAttemptRef.current) setInactivityNotice(ACCOUNT_ACCESS_ERROR);
           await firebaseSignOut(auth);
           return;
         }
@@ -551,6 +555,10 @@ export const AuthProvider = ({ children }) => {
       return { success: false, message: 'Firebase Auth service is not initialized.' };
     }
 
+    if (signInAttemptRef.current) return { success: false, message: 'Sign-in is already in progress.' };
+    signInAttemptRef.current = true;
+    setInactivityNotice('');
+    let attemptUid = '';
     try {
       if (keepSignedIn) {
         updateKeepSignedInPreference(true);
@@ -561,32 +569,29 @@ export const AuthProvider = ({ children }) => {
       }
 
       const credential = await signInWithEmailAndPassword(auth, email, password);
+      attemptUid = credential.user.uid;
       const { list, matched } = await getAccountDirectory(credential.user.uid);
+      if (!matched || matched.status === 'Suspended') {
+        updateKeepSignedInPreference(false);
+        if (auth.currentUser?.uid === attemptUid) await firebaseSignOut(auth);
+        return { success: false, message: ACCOUNT_ACCESS_ERROR };
+      }
       if (auth.currentUser?.uid !== credential.user.uid) return { success: false, message: 'Sign-in session changed. Please try again.' };
 
-      accountsRef.current = list;
-      setAccounts(list);
-
-      if (!matched) {
-        updateKeepSignedInPreference(false);
-        await firebaseSignOut(auth);
-        return { success: false, message: 'Sign-in could not be completed. Check your CCT credentials or contact the CCT administrator.' };
-      }
-      if (matched.status === 'Suspended') {
-        updateKeepSignedInPreference(false);
-        await firebaseSignOut(auth);
-        return { success: false, message: 'Sign-in could not be completed. Check your CCT credentials or contact the CCT administrator.' };
-      }
-
+      setInactivityNotice('');
       activateAccount(credential.user, matched, list);
       addAuditLog('Firebase Auth Sign In', `Signed in as ${email}`);
       return { success: true };
     } catch (error) {
       console.warn('Firebase Auth sign in failure:', error.code, error.message);
+      if (attemptUid && auth.currentUser?.uid === attemptUid) await firebaseSignOut(auth).catch(() => {});
+      updateKeepSignedInPreference(false);
       let message = 'Sign-in could not be completed. Check your CCT credentials or contact the CCT administrator.';
       if (error?.code === 'auth/too-many-requests') message = 'Too many sign-in attempts. Please try again later.';
       else if (['auth/network-request-failed', 'firebase/read-timeout'].includes(error?.code)) message = 'Check your connection and try again.';
       return { success: false, message };
+    } finally {
+      signInAttemptRef.current = false;
     }
   };
 
